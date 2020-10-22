@@ -60,3 +60,7 @@ endif(RAJA_ENABLE AND RAJA_FOUND)
 if(Trilinos_ENABLE AND Trilinos_FOUND)
   add_subdirectory(trilinos)
 endif(Trilinos_ENABLE AND Trilinos_FOUND)
+
+if(ENABLE_PSCTOOLKIT AND PSCTOOLKIT_FOUND)
+  add_subdirectory(psblas)
+endif(ENABLE_PSCTOOLKIT AND PSCTOOLKIT_FOUND)

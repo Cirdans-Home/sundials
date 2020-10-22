@@ -535,6 +535,19 @@ sundials_option(XBRAID_WORKS BOOL "Set to ON to force CMake to accept a given XB
                 DEPENDS_ON XBRAID_ENABLE
                 ADVANCED)
 
+# ---------------------------------------------------------------
+# Enable PSCTOOLKIT support?
+# ---------------------------------------------------------------
+
+sundials_option(ENABLE_PSCTOOLKIT BOOL "Enable PSCTOOLKIT support" OFF)
+
+sundials_option(PSCTOOLKIT_DIR PATH "Path to the root of a PSCTOOLKIT installation" "${PSCTOOLKIT_DIR}"
+                DEPENDS_ON ENABLE_PSCTOOLKIT)
+
+if(ENABLE_PSCTOOLKIT AND NOT MPI_ENABLE)
+  print_error("MPI is required for PSCTOOLKIT support. Set MPI_ENABLE to ON.")
+endif()
+
 # ===============================================================
 # Options for examples
 # ===============================================================
@@ -1111,6 +1124,13 @@ if(ENABLE_XBRAID)
   include(SundialsXBRAID)
 endif()
 
+# -------------------------------------------------------------
+# Find PSCTOOLKIT
+# -------------------------------------------------------------
+
+if(ENABLE_PSCTOOLKIT)
+  include(SundialsPSCTOOLKIT)
+endif()
 
 # ===============================================================
 # At this point all the configuration options are set.
