@@ -62,3 +62,7 @@ endif()
 if(Trilinos_ENABLE AND Trilinos_FOUND)
   add_subdirectory(trilinos)
 endif()
+
+if(ENABLE_PSCTOOLKIT AND PSCTOOLKIT_FOUND)
+  add_subdirectory(psblas)
+endif(ENABLE_PSCTOOLKIT AND PSCTOOLKIT_FOUND)

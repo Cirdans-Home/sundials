@@ -73,9 +73,9 @@ set(regex "-D")
 string(REGEX REPLACE "${regex}" "" PSBCDEFINES "${PSBFDEFINES}")
 separate_arguments(PSBCDEFINES)
 
-set(LINK_PSBLAS -L${PSBLAS_DIR}/lib -lpsb_base -lpsb_util -lpsb_cbind -lpsb_krylov)
+set(LINK_PSBLAS -lgfortran -L${PSCTOOLKIT_DIR}/lib -lpsb_base -lpsb_util -lpsb_cbind -lpsb_krylov -L/usr/lib/x86_64-linux-gnu/openmpi/lib -lmpi_usempif08 -lmpi_usempi_ignore_tkr -lmpi_mpifh -lmpi)
 
-set(LINKED_LIBRARIES "${LINK_BLAS} ${LINK_METIS_LIB} ${LINK_AMD_LIB}")
+set(LINKED_LIBRARIES "${LINK_BLAS} ${LINK_METIS_LIB} ${LINK_AMD_LIB} ${LINK_PSBLAS}")
 set(PSBLAS_INCLUDE ${PSCTOOLKIT_INCLUDE_DIR}/)
 set(PSBLAS_MODULES ${PSCTOOLKIT_DIR}/modules/)
 

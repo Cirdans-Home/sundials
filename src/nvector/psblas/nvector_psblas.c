@@ -45,7 +45,7 @@ N_Vector_ID N_VGetVectorID_PSBLAS(N_Vector v)
  * Function to create a new parallel vector with empty data array
  */
 
-N_Vector N_VNewEmpty_PSBLAS(int ictxt, psb_c_descriptor *cdh)
+N_Vector N_VNewEmpty_PSBLAS(psb_c_ctxt *cctxt, psb_c_descriptor *cdh)
 {
   N_Vector v;
   N_Vector_Ops ops;
@@ -69,6 +69,7 @@ N_Vector N_VNewEmpty_PSBLAS(int ictxt, psb_c_descriptor *cdh)
   ops->nvspace           = N_VSpace_PSBLAS;
   ops->nvgetarraypointer = N_VGetArrayPointer_PSBLAS;
   ops->nvsetarraypointer = N_VSetArrayPointer_PSBLAS;
+  ops->nvgetlength       = N_VGetLength_PSBLAS;
 
   /* standard vector operations */
   ops->nvlinearsum    = N_VLinearSum_PSBLAS;
@@ -112,7 +113,7 @@ N_Vector N_VNewEmpty_PSBLAS(int ictxt, psb_c_descriptor *cdh)
 
   /* Attach lengths and communicator */
   content->cdh           = cdh;
-  content->ictxt         = ictxt;
+  content->cctxt         = cctxt;
   content->own_data      = SUNFALSE;
   content->pvec          = NULL;
 
@@ -127,17 +128,17 @@ N_Vector N_VNewEmpty_PSBLAS(int ictxt, psb_c_descriptor *cdh)
  * Function to create a new parallel vector
  */
 
-N_Vector N_VNew_PSBLAS(int ictxt, psb_c_descriptor *cdh)
+N_Vector N_VNew_PSBLAS(psb_c_ctxt *cctxt, psb_c_descriptor *cdh)
 {
   /*
   This function creates and allocates memory for a parallel vector
-  on the PSBLAS context ictxt with the communicator cdh
+  on the PSBLAS context cctxt with the communicator cdh
   */
   N_Vector v;
   psb_c_dvector *pvec;
 
   v = NULL;
-  v = N_VNewEmpty_PSBLAS(ictxt, cdh);
+  v = N_VNewEmpty_PSBLAS(cctxt, cdh);
   if (v == NULL) return(NULL);
 
   /* Define new PSBLAS Vector */
@@ -157,14 +158,14 @@ N_Vector N_VNew_PSBLAS(int ictxt, psb_c_descriptor *cdh)
  * This function does not allocate memory for pvec itsefl
  */
 
-N_Vector N_VMake_PSBLAS(int ictxt, psb_c_descriptor *cdh, psb_i_t m, psb_l_t *irow,
+N_Vector N_VMake_PSBLAS(psb_c_ctxt *cctxt, psb_c_descriptor *cdh, psb_i_t m, psb_l_t *irow,
                             double *val)
 {
   N_Vector v;
   psb_i_t    local_length;
 
   v = NULL;
-  v = N_VNewEmpty_PSBLAS(ictxt, cdh);
+  v = N_VNewEmpty_PSBLAS(cctxt, cdh);
   if (v == NULL) return(NULL);
 
   psb_c_dgeins(m,irow,val,NV_PVEC_P(v),cdh);
@@ -340,6 +341,7 @@ N_Vector N_VCloneEmpty_PSBLAS(N_Vector w)
   ops->nvspace           = w->ops->nvspace;
   ops->nvgetarraypointer = w->ops->nvgetarraypointer;
   ops->nvsetarraypointer = w->ops->nvsetarraypointer;
+  ops->nvgetlength       = w->ops->nvgetlength;
 
   /* standard vector operations */
   ops->nvlinearsum    = w->ops->nvlinearsum;
@@ -383,7 +385,7 @@ N_Vector N_VCloneEmpty_PSBLAS(N_Vector w)
 
   /* Attach lengths and communicator */
   content->cdh           = NV_DESCRIPTOR_P(w);
-  content->ictxt         = NV_ICTXT_P(w);
+  content->cctxt         = NV_CCTXT_P(w);
   content->own_data      = SUNFALSE;
   content->pvec          = NULL;
 
@@ -429,10 +431,11 @@ void N_VDestroy_PSBLAS(N_Vector v)
 
 void N_VSpace_PSBLAS(N_Vector v, sunindextype *lrw, sunindextype *liw)
 {
-  int ictxt, npes, iam;
+  psb_c_ctxt *cctxt;
+  int npes, iam;
 
-  ictxt = NV_ICTXT_P(v);
-  psb_c_info(ictxt,&iam,&npes);
+  cctxt = NV_CCTXT_P(v);
+  psb_c_info(*cctxt,&iam,&npes);
 
   *lrw = N_VGetLength_PSBLAS(v);
   *liw = 2*npes;
@@ -653,12 +656,15 @@ int N_VLinearCombination_PSBLAS(int nvec, realtype* c, N_Vector* V,N_Vector z){
     return(0);
   }
 
-  if(z == V[1]){
-    for(j=0;j<nvec;j++){
-      ierr = psb_c_dgeaxpbyz( c[j], NV_PVEC_P(V[j]),0.0,NV_PVEC_P(z), NV_PVEC_P(z), NV_DESCRIPTOR_P(z));
+  if(z == V[0]){
+    printf("Primo vettore uguale a quelli da sommare!\n");
+    ierr = psb_c_dgeaxpby((psb_d_t) 0.0,NV_PVEC_P(V[0]), c[0], NV_PVEC_P(z),NV_DESCRIPTOR_P(V[0]));
+    for(j=1;j<nvec;j++){
+      ierr = psb_c_dgeaxpbyz( c[j], NV_PVEC_P(V[j]),1.0,NV_PVEC_P(z), NV_PVEC_P(z), NV_DESCRIPTOR_P(z));
     }
   }
   else{
+    printf("Primo vettore diverso da quelli da sommare!\n");
     for(j=0;j<nvec;j++){
       ierr = psb_c_dgeaxpby( c[j], NV_PVEC_P(V[j]), 1.0, NV_PVEC_P(z), NV_DESCRIPTOR_P(z));
     }

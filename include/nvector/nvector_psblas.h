@@ -60,7 +60,7 @@ struct _N_VectorContent_PSBLAS {
   booleantype own_data;        /* ownership of data                */
   psb_c_descriptor *cdh;       /* descriptor for data distribution */
   psb_c_dvector *pvec;	       /* PSBLAS vector                    */
-  int ictxt;                   /* PSBLAS communicator              */
+  psb_c_ctxt *cctxt;           /* PSBLAS communicator              */
 };
 
 typedef struct _N_VectorContent_PSBLAS *N_VectorContent_PSBLAS;
@@ -68,7 +68,7 @@ typedef struct _N_VectorContent_PSBLAS *N_VectorContent_PSBLAS;
 /*
  * -----------------------------------------------------------------
  * Macros NV_CONTENT_P, NV_DESCRIPTOR_P, NV_OWN_DATA_P,
- *    NV_PVEC_P, NV_ICTXT_P
+ *    NV_PVEC_P, NV_CCTXT_P
  * -----------------------------------------------------------------
  */
 
@@ -80,7 +80,7 @@ typedef struct _N_VectorContent_PSBLAS *N_VectorContent_PSBLAS;
 
 #define NV_PVEC_P(v)       ( NV_CONTENT_P(v)->pvec )
 
-#define NV_ICTXT_P(v)      ( NV_CONTENT_P(v)->ictxt )
+#define NV_CCTXT_P(v)      ( NV_CONTENT_P(v)->cctxt )
 
 
 /*
@@ -89,11 +89,11 @@ typedef struct _N_VectorContent_PSBLAS *N_VectorContent_PSBLAS;
  * -----------------------------------------------------------------
  */
 
-SUNDIALS_EXPORT N_Vector N_VNew_PSBLAS(int ictxt, psb_c_descriptor *cdh);
+SUNDIALS_EXPORT N_Vector N_VNew_PSBLAS(psb_c_ctxt *cctxt, psb_c_descriptor *cdh);
 
-SUNDIALS_EXPORT N_Vector N_VNewEmpty_PSBLAS(int ictxt, psb_c_descriptor *cdh);
+SUNDIALS_EXPORT N_Vector N_VNewEmpty_PSBLAS(psb_c_ctxt *cctxt, psb_c_descriptor *cdh);
 
-SUNDIALS_EXPORT N_Vector N_VMake_PSBLAS(int ictxt, psb_c_descriptor *cdh,
+SUNDIALS_EXPORT N_Vector N_VMake_PSBLAS(psb_c_ctxt *cctxt, psb_c_descriptor *cdh,
   psb_i_t m, psb_l_t *irow,double *val);
 
 SUNDIALS_EXPORT void N_VAsb_PSBLAS(N_Vector v);
