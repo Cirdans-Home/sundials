@@ -40,4 +40,5 @@ endif()
 
 if(ENABLE_PSCTOOLKIT AND PSCTOOLKIT_FOUND)
   add_subdirectory(psblas)
+  add_subdirectory(richards)
 endif(ENABLE_PSCTOOLKIT AND PSCTOOLKIT_FOUND)
