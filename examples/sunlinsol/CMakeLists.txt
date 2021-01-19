@@ -55,3 +55,7 @@ if(MPI_ENABLE AND MPI_C_FOUND)
   add_subdirectory(sptfqmr/parallel)
   #ADD_SUBDIRECTORY(pcg/parallel)
 endif()
+
+if(ENABLE_PSCTOOLKIT AND PSCTOOLKIT_FOUND)
+  add_subdirectory(psblas)
+endif(ENABLE_PSCTOOLKIT AND PSCTOOLKIT_FOUND)

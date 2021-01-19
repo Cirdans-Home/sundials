@@ -29,8 +29,8 @@ libdir       = @libdir@
 include $(prefix)/include/Make.inc.psblas
 include $(prefix)/include/Make.inc.amg4psblas
 PSBC_LIBS= -L$(prefix)/lib -lpsb_cbind
-PSB_LIBS=-lpsb_krylov -lpsb_prec -lpsb_base -lpsb_util -L$(prefix)/lib
-MLD_LIBS=-lamg_prec $(MUMPSLIBS) $(SLULIBS) $(UMFLIBS) $(EXTRALIBS)
+PSB_LIBS=-L$(prefix)/lib -lpsb_krylov -lpsb_prec -lpsb_util -lpsb_base
+MLD_LIBS=-L$(prefix)/lib -lamg_prec -lamg_cbind $(MUMPSLIBS) $(SLULIBS) $(UMFLIBS) $(EXTRALIBS)
 
 CPP         = @CPP@
 CPPFLAGS    = @CPPFLAGS@
@@ -50,7 +50,7 @@ MPI_FLAGS   = @MPI_FLAGS@
 
 TMP_INCS  = ${includedir} ${MPI_INC_DIR} $(CINCLUDES) $(FINCLUDES)
 INCLUDES  = $(addprefix -I, ${TMP_INCS})
-LIBRARIES = -l@SOLVER_LIB@ -lsundials_nvecpsblas ${LIBS} # -lsundials_sunmatrixpsblas
+LIBRARIES = -l@SOLVER_LIB@ -lsundials_sunmatrixpsblas -lsundials_nvecpsblas ${LIBS} 
 
 EXAMPLES = @EXAMPLES@
 EXAMPLES_DEPENDENCIES = @EXAMPLES_DEPENDENCIES@

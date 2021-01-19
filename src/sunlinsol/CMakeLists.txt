@@ -47,3 +47,7 @@ if(CUDA_ENABLE AND CMAKE_CUDA_COMPILER)
     add_subdirectory(cusolversp)
   endif()
 endif(CUDA_ENABLE AND CMAKE_CUDA_COMPILER)
+
+if(ENABLE_PSCTOOLKIT AND PSCTOOLKIT_FOUND)
+  add_subdirectory(psblas)
+endif(ENABLE_PSCTOOLKIT AND PSCTOOLKIT_FOUND)

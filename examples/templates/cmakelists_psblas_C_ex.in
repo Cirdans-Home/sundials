@@ -1,6 +1,6 @@
 # -*- mode: cmake -*-
 # -----------------------------------------------------------------
-# Programmer: Radu Serban @ LLNL
+# Programmer: Fabio Durastante @ IAC-CNR
 # -----------------------------------------------------------------
 # SUNDIALS Copyright Start
 # Copyright (c) 2002-2019, Lawrence Livermore National Security
@@ -12,7 +12,7 @@
 # SPDX-License-Identifier: BSD-3-Clause
 # SUNDIALS Copyright End
 # -----------------------------------------------------------------
-# CMakeLists.txt for @SOLVER@ parallel examples
+# CMakeLists.txt for @SOLVER@ psblas examples
 #
 # This file is generated from a template using  various variables
 # set at configuration time. It can be used as a template for
@@ -58,11 +58,25 @@ FIND_LIBRARY(SUNDIALS_NVEC_LIB
   sundials_nvecpsblas ${SUNDIALS_LIB_DIR}
   DOC "NVECTOR library")
 
+# Find the SUNMATRIX library
+FIND_LIBRARY(SUNDIALS_SUNMATRIX_LIB
+  sundials_sunmatrixpsblas ${SUNDIALS_LIB_DIR}
+  DOC "SUNMattrix library")
+
+# Find the SOLVER library
+FIND_LIBRARY(SUNDIALS_SOLVER_LIB
+  sundials_sunlinsolpsblas ${SUNDIALS_LIB_DIR}
+  DOC "SUNLinSol library")
+
+
 # Set additional libraries
 SET(SUNDIALS_EXTRA_LIB @LIBS@ CACHE STRING "Additional libraries")
 
 # List of all libraries
-SET(SUNDIALS_LIBS ${SUNDIALS_SOLVER_LIB} ${SUNDIALS_NVEC_LIB} ${SUNDIALS_EXTRA_LIB})
+SET(SUNDIALS_LIBS ${SUNDIALS_SOLVER_LIB}
+                  ${SUNDIALS_SUNMATRIX_LIB}
+                  ${SUNDIALS_NVEC_LIB}
+                  ${SUNDIALS_EXTRA_LIB})
 
 # Build each example one by one
 FOREACH(example ${examples})
