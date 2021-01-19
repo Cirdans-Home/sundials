@@ -125,7 +125,7 @@ set(AMGCDEFINES "${FLAGS_MUMPS_LIB} ${FLAGS_SLU_LIB} ${FLAGS_SLUDIST_LIB} ${FLAG
 # Build the variables
 
 set(LINK_PSBLAS -lgfortran -L${PSCTOOLKIT_DIR}/lib
-    -lpsb_krylov -lpsb_prec -lpsb_util -lpsb_base -lpsb_cbind
+    -lpsb_cbind -lpsb_util -lpsb_krylov -lpsb_prec -lpsb_base
     -lamg_cbind -lamg_prec
     -L/usr/lib/x86_64-linux-gnu/openmpi/lib -lmpi_usempif08 -lmpi_usempi_ignore_tkr -lmpi_mpifh -lmpi)
 

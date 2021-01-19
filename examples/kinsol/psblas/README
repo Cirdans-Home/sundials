@@ -1,0 +1,5 @@
+The PSBLAS kinsol example can be run by doing
+  mpirun -np N -machinefile ./GinzburgLandau < kinsol.inp
+
+The options for the linear solver (together with the preconditioner) and for the
+problem can be set in the input file kinsol.inp
