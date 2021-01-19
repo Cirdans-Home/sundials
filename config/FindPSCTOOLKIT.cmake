@@ -73,9 +73,63 @@ set(regex "-D")
 string(REGEX REPLACE "${regex}" "" PSBCDEFINES "${PSBFDEFINES}")
 separate_arguments(PSBCDEFINES)
 
-set(LINK_PSBLAS -lgfortran -L${PSCTOOLKIT_DIR}/lib -lpsb_base -lpsb_util -lpsb_cbind -lpsb_krylov -L/usr/lib/x86_64-linux-gnu/openmpi/lib -lmpi_usempif08 -lmpi_usempi_ignore_tkr -lmpi_mpifh -lmpi)
+# We now parse the AMG4PSBLAS make.inc file, AMG4PSBLAS can be compiled with
+# linking to several other libraries, so we need to collect these information
+set(regex "MUMPSLIBS=.*")
+file(STRINGS ${PSCTOOLKIT_INCLUDE_DIR}/Make.inc.amg4psblas LINK_MUMPS_LIB REGEX "${regex}")
+set(regex ".*#;MUMPSLIBS=")
+string(REGEX REPLACE "${regex}" "" LINK_MUMPS_LIB "${LINK_MUMPS_LIB}")
 
-set(LINKED_LIBRARIES "${LINK_BLAS} ${LINK_METIS_LIB} ${LINK_AMD_LIB} ${LINK_PSBLAS}")
+set(regex "MUMPSFLAGS=.*")
+file(STRINGS ${PSCTOOLKIT_INCLUDE_DIR}/Make.inc.amg4psblas FLAGS_MUMPS_LIB REGEX "${regex}")
+set(regex ".*#;MUMPSFLAGS=")
+string(REGEX REPLACE "${regex}" "" FLAGS_MUMPS_LIB "${FLAGS_MUMPS_LIB}")
+
+set(regex "SLULIBS=.*")
+file(STRINGS ${PSCTOOLKIT_INCLUDE_DIR}/Make.inc.amg4psblas LINK_SLU_LIB REGEX "${regex}")
+set(regex ".*#;SLULIBS=")
+string(REGEX REPLACE "${regex}" "" LINK_SLU_LIB "${LINK_SLU_LIB}")
+
+set(regex "SLUFLAGS=.*")
+file(STRINGS ${PSCTOOLKIT_INCLUDE_DIR}/Make.inc.amg4psblas FLAGS_SLU_LIB REGEX "${regex}")
+set(regex ".*#;SLUFLAGS=")
+string(REGEX REPLACE "${regex}" "" FLAGS_SLU_LIB "${FLAGS_SLU_LIB}")
+
+set(regex "SLUDISTLIBS=.*")
+file(STRINGS ${PSCTOOLKIT_INCLUDE_DIR}/Make.inc.amg4psblas LINK_SLUDIST_LIB REGEX "${regex}")
+set(regex ".*#;SLUDISTLIBS=")
+string(REGEX REPLACE "${regex}" "" LINK_SLUDIST_LIB "${LINK_SLUDIST_LIB}")
+
+set(regex "SLUDISTFLAGS=.*")
+file(STRINGS ${PSCTOOLKIT_INCLUDE_DIR}/Make.inc.amg4psblas FLAGS_SLUDIST_LIB REGEX "${regex}")
+set(regex ".*#;SLUDISTFLAGS=")
+string(REGEX REPLACE "${regex}" "" FLAGS_SLUDIST_LIB "${FLAGS_SLUDIST_LIB}")
+
+set(regex "UMFLIBS=.*")
+file(STRINGS ${PSCTOOLKIT_INCLUDE_DIR}/Make.inc.amg4psblas LINK_UMF_LIB REGEX "${regex}")
+set(regex ".*#;UMFLIBS=")
+string(REGEX REPLACE "${regex}" "" LINK_UMF_LIB "${LINK_UMF_LIB}")
+
+set(regex "UMFFLAGS=.*")
+file(STRINGS ${PSCTOOLKIT_INCLUDE_DIR}/Make.inc.amg4psblas FLAGS_UMF_LIB REGEX "${regex}")
+set(regex ".*#;UMFFLAGS=")
+string(REGEX REPLACE "${regex}" "" FLAGS_UMF_LIB "${FLAGS_UMF_LIB}")
+
+set(regex "EXTRALIBS=.*")
+file(STRINGS ${PSCTOOLKIT_INCLUDE_DIR}/Make.inc.amg4psblas LINK_EXTRA_LIB REGEX "${regex}")
+set(regex "EXTRALIBS=")
+string(REGEX REPLACE "${regex}" "" LINK_EXTRA_LIB "${LINK_EXTRA_LIB}")
+
+set(AMGCDEFINES "${FLAGS_MUMPS_LIB} ${FLAGS_SLU_LIB} ${FLAGS_SLUDIST_LIB} ${FLAGS_UMF_LIB}")
+
+# Build the variables
+
+set(LINK_PSBLAS -lgfortran -L${PSCTOOLKIT_DIR}/lib
+    -lpsb_krylov -lpsb_prec -lpsb_util -lpsb_base -lpsb_cbind
+    -lamg_cbind -lamg_prec
+    -L/usr/lib/x86_64-linux-gnu/openmpi/lib -lmpi_usempif08 -lmpi_usempi_ignore_tkr -lmpi_mpifh -lmpi)
+
+set(LINKED_LIBRARIES "${LINK_BLAS} ${LINK_METIS_LIB} ${LINK_AMD_LIB} ${LINK_PSBLAS} ${LINK_MUMPS_LIB} ${LINK_SLU_LIB} ${LINK_SLUDIST_LIB} ${LINK_UMF_LIB} ${LINK_EXTRA_LIB}")
 set(PSBLAS_INCLUDE ${PSCTOOLKIT_INCLUDE_DIR}/)
 set(PSBLAS_MODULES ${PSCTOOLKIT_DIR}/modules/)
 
