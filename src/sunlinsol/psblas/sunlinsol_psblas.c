@@ -133,8 +133,13 @@ int SUNLinSolInitialize_PSBLAS(SUNLinearSolver S){
       if(iam==0) printf("\tInit of a PSBLAS preconditioner\n");
       ret = psb_c_dprecinit(*(LS_CCTXT_P(S)),LS_PREC_P(S),LS_PTYPE_P(S));
       if(ret != 0){
-        if(iam == 0) printf("Failure on PSBLAS precinit %d ptype %s\n",ret,LS_PTYPE_P(S));
-        return(SUNLS_PSET_FAIL_UNREC);
+        ret = psb_c_dprecfree(LS_PREC_P(S));
+        LS_PREC_P(S) = psb_c_new_dprec();
+        ret = psb_c_dprecinit(*(LS_CCTXT_P(S)),LS_PREC_P(S),LS_PTYPE_P(S));
+        if(ret != 0){
+          if(iam == 0) printf("Failure on PSBLAS precinit %d ptype %s\n",ret,LS_PTYPE_P(S));
+          return(SUNLS_PSET_FAIL_UNREC);
+        }
       }
   }else if(strcmp(LS_PTYPE_P(S),"ML") == 0 ||
     strcmp(LS_PTYPE_P(S),"GS") == 0 ||
@@ -230,6 +235,7 @@ int SUNLinSolSolve_PSBLAS(SUNLinearSolver S, SUNMatrix A,
   if( strcmp(LS_PTYPE_P(S),"NONE") == 0||
       strcmp(LS_PTYPE_P(S),"BJAC") == 0 ||
       strcmp(LS_PTYPE_P(S),"DIAG") == 0 ){
+
     ret=psb_c_dkrylov(LS_METHD_P(S),
                     LS_PMAT_P(S),
                     LS_PREC_P(S),
