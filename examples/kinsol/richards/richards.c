@@ -226,8 +226,8 @@
       get_hparm(stdin,methd);
       get_iparm(stdin,&istop);
       get_iparm(stdin,&itmax);
-      get_iparm(stdin,&irst);
       get_iparm(stdin,&itrace);
+      get_iparm(stdin,&irst);
       get_dparm(stdin,&tol);
       get_hparm(stdin,ptype);
       //get_hparm(stdin, NULL); // First smoother (for all levels but coarsest)
@@ -525,16 +525,17 @@
 
     SUNLinSolInitialize_PSBLAS(LS);
 
-    if(iam == 0) fprintf(stdout, "Setting ML options.\n");
+    if(iam == 0) fprintf(stdout, "Setting the Preconditioner Options.\n Preconditioner is: %s\n",ptype);
+
     /*-------------------------------------------------------------------------
      * Set AMG4PSBLAS options: anything is preconditionable!
      *-------------------------------------------------------------------------*/
-    if( strcmp(ptype,"NONE") || strcmp(ptype,"NOPREC") ){
+    if( strcmp(ptype,"NONE")==0 || strcmp(ptype,"NOPREC")==0 ){
         // Do nothing, keep defaults
-    }else if( strcmp(ptype,"L1-JACOBI") || strcmp(ptype,"JACOBI") || strcmp(ptype,"GS") || strcmp(ptype,"FWGS") || strcmp(ptype,"FBGS")  ){
+    }else if( strcmp(ptype,"L1-JACOBI")==0 || strcmp(ptype,"JACOBI")==0 || strcmp(ptype,"GS")==0 || strcmp(ptype,"FWGS")==0 || strcmp(ptype,"FBGS")==0  ){
       info = SUNLinSolSeti_PSBLAS(LS,"SMOOTHER_SWEEPS",jsweeps);
       if (check_flag(&info, "SMOOTHER_SWEEPS", 1, iam)) psb_c_abort(*cctxt);
-    }else if( strcmp(ptype,"BJAC") || strcmp(ptype,"L1-BJAC") ){
+    }else if( strcmp(ptype,"BJAC")==0 || strcmp(ptype,"L1-BJAC")==0 ){
       info = SUNLinSolSeti_PSBLAS(LS,"SMOOTHER_SWEEPS",jsweeps);
       if (check_flag(&info, "SMOOTHER_SWEEPS", 1, iam)) psb_c_abort(*cctxt);
       if (strcmp(solve,"INVK")){
@@ -554,7 +555,7 @@
       if (check_flag(&info, "INV_FILLIN", 1, iam)) psb_c_abort(*cctxt);
       info = SUNLinSolSetr_PSBLAS(LS,"SUB_ILUTHRS",thr);
       if (check_flag(&info, "SUB_ILUTHRS", 1, iam)) psb_c_abort(*cctxt);
-    }else if( strcmp(ptype,"AS")){
+    }else if( strcmp(ptype,"AS")==0){
       info = SUNLinSolSeti_PSBLAS(LS,"SMOOTHER_SWEEPS",jsweeps);
       if (check_flag(&info, "SMOOTHER_SWEEPS", 1, iam)) psb_c_abort(*cctxt);
       info = SUNLinSolSeti_PSBLAS(LS,"SUB_OVR",novr);
@@ -579,18 +580,19 @@
       if (check_flag(&info, "INV_FILLIN", 1, iam)) psb_c_abort(*cctxt);
       info = SUNLinSolSetr_PSBLAS(LS,"SUB_ILUTHRS",thr);
       if (check_flag(&info, "SUB_ILUTHRS", 1, iam)) psb_c_abort(*cctxt);
-    }else if( strcmp(ptype,"ML")){
+    }else if( strcmp(ptype,"ML")==0){
+      if(iam == 0) fprintf(stdout, "Setting options for the %s preconditioner\n",ptype);
       // Multilevel Preconditioner
       info = SUNLinSolSetc_PSBLAS(LS,"ML_CYCLE",mlcycle);
       info = SUNLinSolSeti_PSBLAS(LS,"OUTER_SWEEPS",outer_sweeps);
       info = SUNLinSolSetc_PSBLAS(LS,"PAR_AGGR_ALG",par_aggr_alg);
       info = SUNLinSolSetc_PSBLAS(LS,"AGGR_PROL",aggr_prol);
       // Options for BCM
-      if (strcmp(aggr_type,"BCM")){
+      if (strcmp(aggr_type,"BCM")==0){
         // call prec%set(bcmag,info)
         info = SUNLinSolSeti_PSBLAS(LS,"BCM_MATCH_ALG",bcm_alg);
         info = SUNLinSolSeti_PSBLAS(LS,"BCM_SWEEPS",bcm_sweeps);
-      }else if(strcmp(aggr_type,"PARMATCH")){
+      }else if(strcmp(aggr_type,"PARMATCH")==0){
         // call prec%set(parmchag,info)
          info = SUNLinSolSeti_PSBLAS(LS,"PRMC_SWEEPS",bcm_sweeps);
          info = SUNLinSolSeti_PSBLAS(LS,"PRMC_NEED_SYMMETRIZE",1);
@@ -615,19 +617,23 @@
       info = SUNLinSolSetc_PSBLAS(LS,"SMOOTHER_TYPE",smther);
       info = SUNLinSolSeti_PSBLAS(LS,"SMOOTHER_SWEEPS",jsweeps);
       // FIRST SMOOTHER
-      if (strcmp(smther,"GS") || strcmp(smther,"BWGS") || strcmp(smther,"FBGS") || strcmp(smther,"JACOBI") || strcmp(smther,"L1-JACOBI") || strcmp(smther,"L1-FBGS") ){
+      if (strcmp(smther,"GS")==0 || strcmp(smther,"BWGS")==0 || strcmp(smther,"FBGS")==0 || strcmp(smther,"JACOBI")==0 || strcmp(smther,"L1-JACOBI")==0 || strcmp(smther,"L1-FBGS")==0 ){
         // do nothing
       }else{
         info = SUNLinSolSeti_PSBLAS(LS,"SUB_OVR",novr);
         info = SUNLinSolSetc_PSBLAS(LS,"SUB_RESTR",restr);
         info = SUNLinSolSetc_PSBLAS(LS,"SUB_PROL",prol);
-        if (strcmp(solve,"INVK")){
-          // TO BE FIXED ON INTERFACE MADE
-        }else if (strcmp(solve,"INVT")){
-          // TO BE FIXED ON INTERFACE MADE
-        }else if (strcmp(solve,"AINV")){
-          // TO BE FIXED ON INTERFACE MADE
+        if (strcmp(solve,"INVK")==0){
+          info = SUNLinSolSetc_PSBLAS(LS,"SUB_SOLVE",solve2);
+          if (check_flag(&info, "SUB_SOLVE", 1, iam)) psb_c_abort(*cctxt);
+        }else if (strcmp(solve,"INVT")==0){
+          info = SUNLinSolSetc_PSBLAS(LS,"SUB_SOLVE",solve2);
+          if (check_flag(&info, "SUB_SOLVE", 1, iam)) psb_c_abort(*cctxt);
+        }else if (strcmp(solve,"AINV")==0){
+          info = SUNLinSolSetc_PSBLAS(LS,"SUB_SOLVE",solve2);
+          if (check_flag(&info, "SUB_SOLVE", 1, iam)) psb_c_abort(*cctxt);
           info = SUNLinSolSetc_PSBLAS(LS,"AINV_ALG",variant);
+          if (check_flag(&info, "SUB_SOLVE", 1, iam)) psb_c_abort(*cctxt);
         }else{
           info = SUNLinSolSetc_PSBLAS(LS,"SUB_SOLVE",solve);
           if (check_flag(&info, "SUB_SOLVE", 1, iam)) psb_c_abort(*cctxt);
@@ -647,13 +653,17 @@
           info = SUNLinSolSeti_PSBLAS(LS,"SUB_OVR",novr2);
           info = SUNLinSolSetc_PSBLAS(LS,"SUB_RESTR",restr2);
           info = SUNLinSolSetc_PSBLAS(LS,"SUB_PROL",prol2);
-          if (strcmp(solve2,"INVK")){
-            // TO BE FIXED ON INTERFACE MADE
-          }else if (strcmp(solve2,"INVT")){
-            // TO BE FIXED ON INTERFACE MADE
-          }else if (strcmp(solve2,"AINV")){
-            // TO BE FIXED ON INTERFACE MADE
+          if (strcmp(solve2,"INVK")==0){
+             info = SUNLinSolSetc_PSBLAS(LS,"SUB_SOLVE",solve2);
+             if (check_flag(&info, "SUB_SOLVE", 1, iam)) psb_c_abort(*cctxt);
+          }else if (strcmp(solve2,"INVT")==0){
+             info = SUNLinSolSetc_PSBLAS(LS,"SUB_SOLVE",solve2);
+             if (check_flag(&info, "SUB_SOLVE", 1, iam)) psb_c_abort(*cctxt);
+          }else if (strcmp(solve2,"AINV")==0){
+            info = SUNLinSolSetc_PSBLAS(LS,"SUB_SOLVE",solve2);
+            if (check_flag(&info, "SUB_SOLVE", 1, iam)) psb_c_abort(*cctxt);
             info = SUNLinSolSetc_PSBLAS(LS,"AINV_ALG",variant2);
+            if (check_flag(&info, "SUB_SOLVE", 1, iam)) psb_c_abort(*cctxt);
           }else{
             info = SUNLinSolSetc_PSBLAS(LS,"SUB_SOLVE",solve2);
             if (check_flag(&info, "SUB_SOLVE", 1, iam)) psb_c_abort(*cctxt);
@@ -667,19 +677,43 @@
         }
       }
       // COARSE SOLVE
+      info = SUNLinSolSetc_PSBLAS(LS,"COARSE_SOLVE",csolve);
+      if (check_flag(&info, "COARSE_SOLVE", 1, iam)) psb_c_abort(*cctxt);
+      if( strcmp(csolve,"BJAC")==0 || strcmp(csolve,"L1-BJAC")==0 ){
+         info = SUNLinSolSetc_PSBLAS(LS,"COARSE_SUBSOLVE",csbsolve);
+         if (check_flag(&info, "COARSE_SUBSOLVE", 1, iam)) psb_c_abort(*cctxt);
+         if( strcmp(csbsolve,"MUMPS")==0){
+            // TODO : Need to implement function to pass the BLR options!
+            info = SUNLinSolSetc_PSBLAS(LS,"MUMPS_LOC_GLOB","LOCAL_SOLVER");
+            if (check_flag(&info, "MUMPS_LOC_GLOB", 1, iam)) psb_c_abort(*cctxt);
+            info = SUNLinSolSeti_PSBLAS(LS,"MUMPS_IPAR_ENTRY",1);
+            if (check_flag(&info, "MUMPS_IPAR_ENTRY", 1, iam)) psb_c_abort(*cctxt);
+            info = SUNLinSolSetr_PSBLAS(LS,"MUMPS_RPAR_ENTRY",0.4);
+            if (check_flag(&info, "MUMPS_RPAR_ENTRY", 1, iam)) psb_c_abort(*cctxt);
+         }
+         // TODO: Support for RKR Solver!
+         info = SUNLinSolSetc_PSBLAS(LS,"SMOOTHER_STOP",checkres);
+         if (check_flag(&info, "SMOOTHER_STOP", 1, iam)) psb_c_abort(*cctxt);
+         info = SUNLinSolSetc_PSBLAS(LS,"SMOOTHER_TRACE",printres);
+         if (check_flag(&info, "SMOOTHER_TRACE", 1, iam)) psb_c_abort(*cctxt);
+         info = SUNLinSolSetr_PSBLAS(LS,"SMOOTHER_STOPTOL",ctol);
+         if (check_flag(&info, "SMOOTHER_STOPTOL", 1, iam)) psb_c_abort(*cctxt);
+         info = SUNLinSolSeti_PSBLAS(LS,"SMOOTHER_ITRACE",printiter);
+         if (check_flag(&info, "SMOOTHER_ITRACE", 1, iam)) psb_c_abort(*cctxt);
+         info = SUNLinSolSeti_PSBLAS(LS,"SMOOTHER_RESIDUAL",checkiter);
+         if (check_flag(&info, "SMOOTHER_RESIDUAL", 1, iam)) psb_c_abort(*cctxt);
+      }
+      info = SUNLinSolSetc_PSBLAS(LS,"COARSE_MAT",cmat);
+      if (check_flag(&info, "COARSE_MAT", 1, iam)) psb_c_abort(*cctxt);
+      info = SUNLinSolSeti_PSBLAS(LS,"COARSE_FILLIN",cfill);
+      if (check_flag(&info, "COARSE_FILLIN", 1, iam)) psb_c_abort(*cctxt);
+      info = SUNLinSolSetr_PSBLAS(LS,"COARSE_ILUTHRS",cthres);
+      if (check_flag(&info, "COARSE_ILUTHRS", 1, iam)) psb_c_abort(*cctxt);
+      info = SUNLinSolSeti_PSBLAS(LS,"COARSE_SWEEPS",cjswp);
+      if (check_flag(&info, "COARSE_SWEEPS", 1, iam)) psb_c_abort(*cctxt);
     }else{
       if(iam == 0); fprintf(stderr, "Warning %s is an unknown preconditioner!\n",ptype);
     }
-
-
-    info = SUNLinSolSeti_PSBLAS(LS,"SMOOTHER_SWEEPS",2);
-    if (check_flag(&info, "SMOOTHER_SWEEPS", 1, iam)) psb_c_abort(*cctxt);
-    info = SUNLinSolSeti_PSBLAS(LS,"SUB_FILLIN",1);
-    if (check_flag(&info, "SUB_FILLIN", 1, iam)) psb_c_abort(*cctxt);
-    info = SUNLinSolSetc_PSBLAS(LS,"COARSE_SOLVE","BJAC");
-    if (check_flag(&info, "COARSE_SOLVE", 1, iam)) psb_c_abort(*cctxt);
-    info = SUNLinSolSetc_PSBLAS(LS,"COARSE_SUBSOLVE","ILU");
-    if (check_flag(&info, "COARSE_SUBSOLVE", 1, iam)) psb_c_abort(*cctxt);
 
     user_data.LS = &LS;
 
@@ -717,7 +751,7 @@
    if (check_flag(&info, "KINInit", 1, iam)) psb_c_abort(*cctxt);
    info = KINSetNumMaxIters(kmem, newtonmaxit);
    if (check_flag(&info, "KINSetNumMaxIters", 1, iam)) psb_c_abort(*cctxt);
-   info = KINSetPrintLevel(kmem, 0);
+   info = KINSetPrintLevel(kmem, 3);
    if (check_flag(&info, "KINSetPrintLevel", 2, iam)) psb_c_abort(*cctxt);
    info = KINSetUserData(kmem, &user_data);
    if (check_flag(&info, "KINSetUserData", 1, iam)) psb_c_abort(*cctxt);
@@ -759,65 +793,65 @@
      PrintFinalStats(kmem,1);
    }
    KINFree(&kmem);
-
-   for(i=2;i<=Nt;i++){  // Main Time Loop
-     if (iam == 0){
-       fprintf(stdout, "\n**********************************************************************\n");
-       fprintf(stdout, " Time Step %d of %d \n", i,Nt );
-       fprintf(stdout, "**********************************************************************\n");
-       fflush(stdout);
-     }
-     user_data.timestep = i; // used to compute time depending quantities
-
-     /* For Euler Time-Stepping we take note of the old pressure value */
-     N_VLinearSum(1.0,u,0.0,user_data.oldpressure,user_data.oldpressure);
-
-     /* We perform the new incomplete Newton time step using as starting point
-     the solution at the previous time step.                                  */
-     N_VConst(1.0,sc);               // Unweighted norm
-     N_VConst(1.0,su);               // Unweighted norm
-     kmem = KINCreate();
-     info = KINInit(kmem, funcprpr, u);
-     if (check_flag(&info, "KINInit", 1, iam)) psb_c_abort(*cctxt);
-     info = KINSetNumMaxIters(kmem, newtonmaxit);
-     if (check_flag(&info, "KINSetNumMaxIters", 1, iam)) psb_c_abort(*cctxt);
-     info = KINSetPrintLevel(kmem, 0);
-     if (check_flag(&info, "KINSetPrintLevel", 1, iam)) psb_c_abort(*cctxt);
-     info = KINSetUserData(kmem, &user_data);
-     if (check_flag(&info, "KINSetUserData", 1, iam)) psb_c_abort(*cctxt);
-     info = KINSetConstraints(kmem, constraints);
-     if (check_flag(&info, "KINSetConstraints", 1, iam)) psb_c_abort(*cctxt);
-     info = KINSetFuncNormTol(kmem, fnormtol);
-     if (check_flag(&info, "KINSetFuncNormTol", 1, iam)) psb_c_abort(*cctxt);
-     info = KINSetScaledStepTol(kmem, scsteptol);
-     if (check_flag(&info, "KINSetScaledStepTol", 1, iam)) psb_c_abort(*cctxt);
-     /* Attach the linear solver to KINSOL and set its options */
-     info = KINSetLinearSolver(kmem, LS, J);
-     if (check_flag(&info, "KINSetLinearSolver", 1, iam)) psb_c_abort(*cctxt);
-     info = KINSetJacFn(kmem,jac);
-     if (check_flag(&info, "KINSetJacFn", 1, iam)) psb_c_abort(*cctxt);
-     info = KINSetEtaForm(kmem,KIN_ETACONSTANT);
-     if (check_flag(&info, "KINSetEtaForm", 1, iam)) psb_c_abort(*cctxt);
-     info = KINSetEtaConstValue(kmem,options.eps);
-     if (check_flag(&info, "KINSetEtaConstValue", 1, iam)) psb_c_abort(*cctxt);
-     info = KINSol(kmem,           /* KINSol memory block */
-                   u,              /* initial guess on input; solution vector */
-                   globalstrategy, /* global strategy choice */
-                   su,             /* scaling vector for the variable u */
-                   sc);            /* scaling vector for function values fval */
-
-     if (check_flag(&info, "KINSol", 1, iam)){
-       psb_c_abort(*cctxt);
-     } else {
-       info = 0;
-     }
-
-     if(iam == 0){
-       PrintFinalStats(kmem,1);
-     }
-     KINFree(&kmem);
-   }
-
+   //
+   // for(i=2;i<=Nt;i++){  // Main Time Loop
+   //   if (iam == 0){
+   //     fprintf(stdout, "\n**********************************************************************\n");
+   //     fprintf(stdout, " Time Step %d of %d \n", i,Nt );
+   //     fprintf(stdout, "**********************************************************************\n");
+   //     fflush(stdout);
+   //   }
+   //   user_data.timestep = i; // used to compute time depending quantities
+   //
+   //   /* For Euler Time-Stepping we take note of the old pressure value */
+   //   N_VLinearSum(1.0,u,0.0,user_data.oldpressure,user_data.oldpressure);
+   //
+   //   /* We perform the new incomplete Newton time step using as starting point
+   //   the solution at the previous time step.                                  */
+   //   N_VConst(1.0,sc);               // Unweighted norm
+   //   N_VConst(1.0,su);               // Unweighted norm
+   //   kmem = KINCreate();
+   //   info = KINInit(kmem, funcprpr, u);
+   //   if (check_flag(&info, "KINInit", 1, iam)) psb_c_abort(*cctxt);
+   //   info = KINSetNumMaxIters(kmem, newtonmaxit);
+   //   if (check_flag(&info, "KINSetNumMaxIters", 1, iam)) psb_c_abort(*cctxt);
+   //   info = KINSetPrintLevel(kmem, 0);
+   //   if (check_flag(&info, "KINSetPrintLevel", 1, iam)) psb_c_abort(*cctxt);
+   //   info = KINSetUserData(kmem, &user_data);
+   //   if (check_flag(&info, "KINSetUserData", 1, iam)) psb_c_abort(*cctxt);
+   //   info = KINSetConstraints(kmem, constraints);
+   //   if (check_flag(&info, "KINSetConstraints", 1, iam)) psb_c_abort(*cctxt);
+   //   info = KINSetFuncNormTol(kmem, fnormtol);
+   //   if (check_flag(&info, "KINSetFuncNormTol", 1, iam)) psb_c_abort(*cctxt);
+   //   info = KINSetScaledStepTol(kmem, scsteptol);
+   //   if (check_flag(&info, "KINSetScaledStepTol", 1, iam)) psb_c_abort(*cctxt);
+   //   /* Attach the linear solver to KINSOL and set its options */
+   //   info = KINSetLinearSolver(kmem, LS, J);
+   //   if (check_flag(&info, "KINSetLinearSolver", 1, iam)) psb_c_abort(*cctxt);
+   //   info = KINSetJacFn(kmem,jac);
+   //   if (check_flag(&info, "KINSetJacFn", 1, iam)) psb_c_abort(*cctxt);
+   //   info = KINSetEtaForm(kmem,KIN_ETACONSTANT);
+   //   if (check_flag(&info, "KINSetEtaForm", 1, iam)) psb_c_abort(*cctxt);
+   //   info = KINSetEtaConstValue(kmem,options.eps);
+   //   if (check_flag(&info, "KINSetEtaConstValue", 1, iam)) psb_c_abort(*cctxt);
+   //   info = KINSol(kmem,           /* KINSol memory block */
+   //                 u,              /* initial guess on input; solution vector */
+   //                 globalstrategy, /* global strategy choice */
+   //                 su,             /* scaling vector for the variable u */
+   //                 sc);            /* scaling vector for function values fval */
+   //
+   //   if (check_flag(&info, "KINSol", 1, iam)){
+   //     psb_c_abort(*cctxt);
+   //   } else {
+   //     info = 0;
+   //   }
+   //
+   //   if(iam == 0){
+   //     PrintFinalStats(kmem,1);
+   //   }
+   //   KINFree(&kmem);
+   // }
+   //
    /* Free the Memory */
 
    N_VDestroy(u);
@@ -1071,6 +1105,12 @@ static int jac(N_Vector yvec, N_Vector fvec, SUNMatrix J,
     fprintf(stdout, "----------------------------------------------------------------------\n");
     fflush(stdout);
   }
+
+  /*---------------------------------------------------------------------------*
+   * First of all we make sure that the Jacobian matrix is in assembly state   *
+   * and that the prescribred entries can be overwritten.                      *
+   ----------------------------------------------------------------------------*/
+  SUNMatZero_PSBLAS(J);
 
   deltah = (double) L/(idim+1);
   sqdeltah = deltah*deltah;
