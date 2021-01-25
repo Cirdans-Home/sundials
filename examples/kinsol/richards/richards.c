@@ -73,7 +73,7 @@
   static double sgn(double x);
   static double source(double x, double y, double z, double t);
   static double boundary(double x, double y, double z, double t, void *user_data);
-  static double upstream(double pU, double pL, void *user_data);
+  static double upstream(double pL, double pU, void *user_data);
   static double chi(double pU, double pL);
 
  /*-------------------------------------------------
@@ -125,6 +125,9 @@
     SUNLinearSolver *LS;  // Pointer to Linear Solver Object
     SUNMatrix B;          // Matrix on which the preconditioner is built
     psb_i_t timestep;     // Actual time-step
+    psb_i_t functioncount;
+    psb_i_t jacobiancount;
+    psb_i_t verbosity;
   };
 
  #define NBMAX       20
@@ -442,6 +445,12 @@
    user_data.rho    = rho;
    user_data.phi    = phi;
    user_data.pr     = pr;
+   user_data.timestep = 1;
+   user_data.functioncount = 0;
+   user_data.jacobiancount = 0;
+   user_data.verbosity = 0; // 0 Do not print/dump anything,
+                            // 1 Print what we are computing,
+                            // 2 Print and dump everything (MEMORY! SMALL DEBUG)
 
    /*We need to reuse the same communicator many times, namely every time we
    need to populate a new Jacobian. Therefore we use the psb_c_cdins routine
@@ -515,8 +524,13 @@
     options.eps    = tol;
     options.itmax  = itmax;
     options.irst   = irst;
-    options.itrace = 1;
+    options.itrace = itrace;
     options.istop  = istop;
+    if (iam == 0){
+      fprintf(stdout,"Solver options:\n");
+      fprintf(stdout,"%s solver maxit = %d, irst = %d, itrace = %d, istop = %d\n",
+         methd,itmax,irst,itrace,istop);
+    }
     /*-------------------------------------------------------------------------
      * Create PSBLAS/AMG4PSBLAS linear solver
      *-------------------------------------------------------------------------*/
@@ -745,6 +759,15 @@
    user_data.dt = dt;
    N_VConst(pr,u);  // Initial Condition
    N_VLinearSum(1.0,u,0.0,user_data.oldpressure,user_data.oldpressure);
+
+   // fprintf(stderr, "K(%f,%f,%f,%f) = %f\n",-10.0,Ks,a,gamma,Kfun(-10.0,a,gamma,Ks));
+   // fprintf(stderr, "s(%f,%f,%f,%f,%f) = %f\n",-10.0,alpha,beta,thetas,thetar,Sfun(-10.0,alpha,beta,thetas,thetar));
+   // fprintf(stderr, "s'(%f,%f,%f,%f,%f) = %f\n",-10.0, alpha, beta, thetas,thetar,Sfunprime(-10.0, alpha, beta, thetas,thetar) );
+   // //
+   // funcprpr(u, su, &user_data);
+   // //
+   // jac(u, su, J, &user_data, sc, sc);
+
    /* Initialization of the nonlinear solver */
    kmem = KINCreate();
    info = KINInit(kmem, funcprpr, u);
@@ -766,7 +789,7 @@
    if (check_flag(&info, "KINSetLinearSolver", 1, iam)) psb_c_abort(*cctxt);
    info = KINSetJacFn(kmem,jac);
    if (check_flag(&info, "KINSetJacFn", 1, iam)) psb_c_abort(*cctxt);
-   info = KINSetEtaForm(kmem,KIN_ETACONSTANT);
+   info = KINSetEtaForm(kmem,KIN_ETACONSTANT); // KIN_ETACONSTANT
    if (check_flag(&info, "KINSetEtaForm", 1, iam)) psb_c_abort(*cctxt);
    info = KINSetEtaConstValue(kmem,options.eps);
    if (check_flag(&info, "KINSetEtaConstValue", 1, iam)) psb_c_abort(*cctxt);
@@ -793,7 +816,7 @@
      PrintFinalStats(kmem,1);
    }
    KINFree(&kmem);
-   //
+
    // for(i=2;i<=Nt;i++){  // Main Time Loop
    //   if (iam == 0){
    //     fprintf(stdout, "\n**********************************************************************\n");
@@ -851,7 +874,7 @@
    //   }
    //   KINFree(&kmem);
    // }
-   //
+
    /* Free the Memory */
 
    N_VDestroy(u);
@@ -884,6 +907,8 @@ static int funcprpr(N_Vector u, N_Vector fval, void *user_data)
    double x, y, z, t, deltah, sqdeltah, deltah2;
    double val[1],entries[8];
    psb_i_t ix, iy, iz, ijk[3],sizes[3];
+   FILE *outfile1,*outfile2;
+   char infilename[20],outfilename[20];
 
    /* Problem parameters */
    psb_d_t thetas, thetar, alpha, beta, a, gamma, Ks, dt, rho, phi, pr;
@@ -915,7 +940,19 @@ static int funcprpr(N_Vector u, N_Vector fval, void *user_data)
    psb_c_info(*(NV_CCTXT_P(u)),&iam,&np);
    psb_c_set_index_base(0);
 
-   if (iam == 0){
+   if ( input->verbosity > 1 ){
+      sprintf(infilename,"fin%d_np%d.dat",input->functioncount,np);
+      outfile1 = fopen(infilename,"w+");
+      N_VPrintFile_PSBLAS(u,outfile1);
+      fclose(outfile1);
+   }
+
+   deltah = (double) L/(idim+1.0);
+   sqdeltah = deltah*deltah;
+   deltah2  = 2.0* deltah;
+   sizes[0] = idim; sizes[1] = idim; sizes[2] = idim;
+
+   if (iam == 0 && input->verbosity > 0){
      fprintf(stdout, "----------------------------------------------------------------------\n");
      fprintf(stdout, "Function Evaluation on the parameters:\n");
      fprintf(stdout, "----------------------------------------------------------------------\n");
@@ -929,21 +966,19 @@ static int funcprpr(N_Vector u, N_Vector fval, void *user_data)
      alpha,beta,a,gamma);
      fprintf(stdout, "Initial value of the pressure head is %lf cm\n",pr);
      fprintf(stdout, "Solving in a box [0,%lf]x[0,%lf]x[0,%lf]\n",xmax,ymax,L);
+     fprintf(stdout, "dx = %1.4f dt = %1.4f\n",deltah,dt);
      fprintf(stdout, "----------------------------------------------------------------------\n");
      fflush(stdout);
    }
 
-   deltah = (double) L/(idim+1);
-   sqdeltah = deltah*deltah;
-   deltah2  = 2.0* deltah;
-   sizes[0] = idim; sizes[1] = idim; sizes[2] = idim;
+
 
    for (i=0; i<nl;  i++) {
      glob_row=input->vl[i];                 // Get the index of the global row
      // We compute the local indexes of the elements on the stencil
      psb_c_l_idx2ijk(ijk,glob_row,sizes,3,0);
      ix = ijk[0]; iy = ijk[1]; iz = ijk[2];
-     x = ix*deltah; y = iy*deltah; z = iz*deltah; t = (input->timestep)*dt;
+     x = (ix+1)*deltah; y = (iy+1)*deltah; z = (iz+1)*deltah; t = (input->timestep)*dt;
      // We compute the result of Φ(p) by first going back to the (i,j,k)
      // indexing and substiting the value of p[i,j,k] on the boundary with the
      // correct values, otherwise we use the entries stored in u, together with
@@ -957,7 +992,8 @@ static int funcprpr(N_Vector u, N_Vector fval, void *user_data)
      entries[1] = psb_c_dgetelem(NV_PVEC_P(u),glob_row,
                                   NV_DESCRIPTOR_P(u)); // u^(l)_{i,j,k}
      if (ix == 0) {        // Cannot do i-1
-       entries[2] = boundary(x,y,z,t,user_data); // u^(l)_{i-1,j,k}
+       entries[2] = boundary(0.0,y,z,t,user_data); // u^(l)_{i-1,j,k}
+       //  fprintf(stderr, "b(%1.2f,%1.2f,%1.2f) = %1.2f\n",0.0,y,z,entries[2]);
      }else{
        ijk[0] = ix - 1; ijk[1] = iy; ijk[2] = iz;
        entries[2] = psb_c_dgetelem(NV_PVEC_P(u),
@@ -965,7 +1001,8 @@ static int funcprpr(N_Vector u, N_Vector fval, void *user_data)
                                    NV_DESCRIPTOR_P(u)); // u^(l)_{i-1,j,k}
      }
      if (ix == idim -1){
-       entries[3] = boundary(x,y,z,t,user_data);
+       entries[3] = boundary(L,y,z,t,user_data);
+       //  fprintf(stderr, "b(%1.2f,%1.2f,%1.2f) = %1.2f\n",L,y,z,entries[3]);
      }else{
        ijk[0] = ix+1; ijk[1] = iy; ijk[2] = iz;
        entries[3] = psb_c_dgetelem(NV_PVEC_P(u),
@@ -973,7 +1010,8 @@ static int funcprpr(N_Vector u, N_Vector fval, void *user_data)
                                    NV_DESCRIPTOR_P(u));  // u^(l)_{i+1,j,k}
      }
      if (iy == 0){       // Cannot do j-1
-       entries[4] = boundary(x,y,z,t,user_data); // u^(l)_{i+1,j,k}
+       entries[4] = boundary(x,0.0,z,t,user_data); // u^(l)_{i+1,j,k}
+       //  fprintf(stderr, "b(%1.2f,%1.2f,%1.2f) = %1.2f\n",x,0.0,z,entries[4]);
      }else{
        ijk[0] = ix; ijk[1] = iy-1; ijk[2] = iz;
        entries[4] = psb_c_dgetelem(NV_PVEC_P(u),
@@ -981,7 +1019,8 @@ static int funcprpr(N_Vector u, N_Vector fval, void *user_data)
                                    NV_DESCRIPTOR_P(u));  // u^(l)_{i,j-1,k}
      }
      if (iy == idim -1){
-       entries[5] = boundary(x,y,z,t,user_data);
+       entries[5] = boundary(x,L,z,t,user_data);
+       //  fprintf(stderr, "b(%1.2f,%1.2f,%1.2f) = %1.2f\n",x,L,z,entries[5]);
      }else{
        ijk[0] = ix; ijk[1] = iy+1; ijk[2] = iz;
        entries[5] = psb_c_dgetelem(NV_PVEC_P(u),
@@ -989,7 +1028,9 @@ static int funcprpr(N_Vector u, N_Vector fval, void *user_data)
                                    NV_DESCRIPTOR_P(u));  // u^(l)_{i,j+1,k}
      }
      if (iz == 0){       // Cannot do k-1
-       entries[6] = boundary(x,y,z,t,user_data);
+       entries[6] = boundary(x,y,0.0,t,user_data);
+       //  fprintf(stderr, "b(%1.2f,%1.2f,%1.2f) = %1.2f\n",x,y,0.0,entries[6]);
+       // fprintf(stderr, "K(%f,%f,%f,%f) = %f \n",entries[6],a,gamma,Ks,Kfun(entries[6],a,gamma,Ks));
      }else{
        ijk[0] = ix; ijk[1] = iy; ijk[2] = iz-1;
        entries[6] = psb_c_dgetelem(NV_PVEC_P(u),
@@ -998,6 +1039,8 @@ static int funcprpr(N_Vector u, N_Vector fval, void *user_data)
      }
      if (iz == idim -1){ // Cannot do k+1
        entries[7] = boundary(x,y,L,t,user_data);
+       // fprintf(stderr, "b(%1.2f,%1.2f,%1.2f) = %1.2f\n",x,y,L,entries[7]);
+       // fprintf(stderr, "K(%f,%f,%f,%f) = %f \n",entries[7],a,gamma,Ks,Kfun(entries[7],a,gamma,Ks));
      }else{
        ijk[0] = ix; ijk[1] = iy; ijk[2] = iz+1;
        entries[7] = psb_c_dgetelem(NV_PVEC_P(u),
@@ -1006,29 +1049,15 @@ static int funcprpr(N_Vector u, N_Vector fval, void *user_data)
      }
      // We have now recovered all the entries, and we can compute the glob_rowth
      // entry of the funciton
-     val[0] = (rho*phi)/dt*(Sfun(entries[0],alpha,beta,thetas,thetar)
-      - Sfun(entries[1],alpha,beta,thetas,thetar))
-      - 1/sqdeltah*(  // x-direction
-        ( entries[3]-entries[1] )*upstream(entries[3],entries[1],user_data)
-         - (entries[1]-entries[2])*upstream(entries[1],entries[2],user_data)
-      )
-      - 1/sqdeltah*(  // y-direction
-        ( entries[5]-entries[1] )*upstream(entries[5],entries[1],user_data)
-         - (entries[1]-entries[4])*upstream(entries[1],entries[4],user_data)
-      )
-      - 1/sqdeltah*(  // z-direction
-        ( entries[7]-entries[1] )*upstream(entries[7],entries[1],user_data)
-         - (entries[1]-entries[6])*upstream(entries[1],entries[6],user_data)
-      )
-      - 1/deltah2*( // z-transport
-        Kfun(entries[7],a,gamma,Ks)
-        -Kfun(entries[6],a,gamma,Ks)
-      )- source(x,y,z,t);
-
-      // fprintf(stdout, "\n\nGlobal Row %ld Central index (%d,%d,%d)\n",glob_row,ix,iy,iz);
-      // fprintf(stdout, "[ 00.00 , %1.2lf , 00.00 ]\n[%1.2lf , %1.2lf , %1.2lf ]\n[ 00.00 , %1.2lf , 00.00 ]\n",entries[5],entries[2],entries[1],entries[3],entries[4]);
-      // fprintf(stdout, "[%1.2lf]\n[%1.2lf]\n[%1.2lf]\n",entries[7],entries[1],entries[6]);
-      // fprintf(stdout, "F(%ld|%d,%d,%d) = %lf\n",glob_row,ix,iy,iz,val[0]);
+      val[0] = ((rho*phi)/dt)*(Sfun(entries[1],alpha,beta,thetas,thetar)
+      - Sfun(entries[0],alpha,beta,thetas,thetar)) + (
+      - upstream(entries[3],entries[1],user_data)*(entries[3]-entries[1])
+      + upstream(entries[1],entries[2],user_data)*(entries[1]-entries[2])
+      - upstream(entries[5],entries[1],user_data)*(entries[5]-entries[1])
+      + upstream(entries[1],entries[4],user_data)*(entries[1]-entries[4])
+      - upstream(entries[7],entries[1],user_data)*(entries[7]-entries[1])
+      + upstream(entries[1],entries[6],user_data)*(entries[1]-entries[6]))/sqdeltah
+      + (Kfun(entries[6],a,gamma,Ks) - Kfun(entries[7],a,gamma,Ks))/deltah2;
 
      irow[0] = glob_row;
      psb_c_dgeins(1,irow,val,NV_PVEC_P(fval),NV_DESCRIPTOR_P(fval));
@@ -1037,10 +1066,15 @@ static int funcprpr(N_Vector u, N_Vector fval, void *user_data)
    // We assemble the vector at the end
    N_VAsb_PSBLAS(fval);
 
-   FILE *outfile;
-   outfile = fopen("vector.dat","w+");
-   N_VPrintFile_PSBLAS(fval,outfile);
-   fclose(outfile);
+   if ( input->verbosity > 1 ){
+      sprintf(outfilename,"fout%d_np%d.dat",input->functioncount,iam);
+      outfile2 = fopen(outfilename,"w+");
+      N_VPrintFile_PSBLAS(fval,outfile2);
+      fclose(outfile2);
+   }
+
+   input->functioncount += 1;
+
   return(info);
 }
 
@@ -1062,6 +1096,7 @@ static int jac(N_Vector yvec, N_Vector fvec, SUNMatrix J,
   psb_d_t xmax, ymax, L;
   /* Timings */
   psb_d_t tic, toc, timecdh;
+  char filename[100];
 
   /* Load problem parameters */
   thetas = input->thetas;
@@ -1088,7 +1123,7 @@ static int jac(N_Vector yvec, N_Vector fvec, SUNMatrix J,
   psb_c_info(*(NV_CCTXT_P(yvec)),&iam,&np);
   psb_c_set_index_base(0);
 
-  if (iam == 0){
+  if (iam == 0 && input->verbosity > 0){
     fprintf(stdout, "----------------------------------------------------------------------\n");
     fprintf(stdout, "Jacobian Evaluation on the parameters:\n");
     fprintf(stdout, "----------------------------------------------------------------------\n");
@@ -1116,13 +1151,14 @@ static int jac(N_Vector yvec, N_Vector fvec, SUNMatrix J,
   sqdeltah = deltah*deltah;
   deltah2  = 2.0* deltah;
   sizes[0] = idim; sizes[1] = idim; sizes[2] = idim;
-  x = ix*deltah; y = iy*deltah; z = iz*deltah; t = (input->timestep)*dt;
+  t = (input->timestep)*dt;
 
   for (i=0; i<nl;  i++) {
     glob_row=input->vl[i];                 // Get the index of the global row
     // We compute the local indexes of the elements on the stencil
     psb_c_l_idx2ijk(ijk,glob_row,sizes,3,0);
     ix = ijk[0]; iy = ijk[1]; iz = ijk[2];
+    x = (ix+1)*deltah; y = (iy+1)*deltah; z = (iz+1)*deltah;
     el = 0;
 
     /* To compute the expression of the Jacobian for Φ we first need to access
@@ -1134,7 +1170,8 @@ static int jac(N_Vector yvec, N_Vector fvec, SUNMatrix J,
     entries[1] = psb_c_dgetelem(NV_PVEC_P(yvec),glob_row,
                                  NV_DESCRIPTOR_P(yvec)); // u^(l)_{i,j,k}
     if (ix == 0) {        // Cannot do i-1
-      entries[2] = boundary(x,y,z,t,&user_data); // u^(l)_{i-1,j,k}
+      entries[2] = boundary(0.0,y,z,t,user_data); // u^(l)_{i-1,j,k}
+      //  fprintf(stderr, "b(%1.2f,%1.2f,%1.2f) = %1.2f\n",0.0,y,z,entries[2]);
     }else{
       ijk[0] = ix - 1; ijk[1] = iy; ijk[2] = iz;
       entries[2] = psb_c_dgetelem(NV_PVEC_P(yvec),
@@ -1142,7 +1179,8 @@ static int jac(N_Vector yvec, N_Vector fvec, SUNMatrix J,
                                   NV_DESCRIPTOR_P(yvec)); // u^(l)_{i-1,j,k}
     }
     if (ix == idim -1){
-      entries[3] = boundary(x,y,z,t,&user_data);
+      entries[3] = boundary(L,y,z,t,user_data);
+      //  fprintf(stderr, "b(%1.2f,%1.2f,%1.2f) = %1.2f\n",L,y,z,entries[3]);
     }else{
       ijk[0] = ix+1; ijk[1] = iy; ijk[2] = iz;
       entries[3] = psb_c_dgetelem(NV_PVEC_P(yvec),
@@ -1150,7 +1188,8 @@ static int jac(N_Vector yvec, N_Vector fvec, SUNMatrix J,
                                   NV_DESCRIPTOR_P(yvec));  // u^(l)_{i+1,j,k}
     }
     if (iy == 0){       // Cannot do j-1
-      entries[4] = boundary(x,y,z,t,&user_data); // u^(l)_{i+1,j,k}
+      entries[4] = boundary(x,0.0,z,t,user_data); // u^(l)_{i+1,j,k}
+      //  fprintf(stderr, "b(%1.2f,%1.2f,%1.2f) = %1.2f\n",x,0.0,z,entries[4]);
     }else{
       ijk[0] = ix; ijk[1] = iy-1; ijk[2] = iz;
       entries[4] = psb_c_dgetelem(NV_PVEC_P(yvec),
@@ -1158,7 +1197,8 @@ static int jac(N_Vector yvec, N_Vector fvec, SUNMatrix J,
                                   NV_DESCRIPTOR_P(yvec));  // u^(l)_{i,j-1,k}
     }
     if (iy == idim -1){
-      entries[5] = boundary(x,y,z,t,&user_data);
+      entries[5] = boundary(x,L,z,t,user_data);
+      //  fprintf(stderr, "b(%1.2f,%1.2f,%1.2f) = %1.2f\n",x,L,z,entries[5]);
     }else{
       ijk[0] = ix; ijk[1] = iy+1; ijk[2] = iz;
       entries[5] = psb_c_dgetelem(NV_PVEC_P(yvec),
@@ -1166,7 +1206,9 @@ static int jac(N_Vector yvec, N_Vector fvec, SUNMatrix J,
                                   NV_DESCRIPTOR_P(yvec));  // u^(l)_{i,j+1,k}
     }
     if (iz == 0){       // Cannot do k-1
-      entries[6] = boundary(x,y,z,t,&user_data);
+      entries[6] = boundary(x,y,0.0,t,user_data);
+      //  fprintf(stderr, "b(%1.2f,%1.2f,%1.2f) = %1.2f\n",x,y,0.0,entries[6]);
+      // fprintf(stderr, "K(%f,%f,%f,%f) = %f \n",entries[6],a,gamma,Ks,Kfun(entries[6],a,gamma,Ks));
     }else{
       ijk[0] = ix; ijk[1] = iy; ijk[2] = iz-1;
       entries[6] = psb_c_dgetelem(NV_PVEC_P(yvec),
@@ -1174,7 +1216,9 @@ static int jac(N_Vector yvec, N_Vector fvec, SUNMatrix J,
                                   NV_DESCRIPTOR_P(yvec));  // u^(l)_{i,j,k-1}
     }
     if (iz == idim -1){ // Cannot do k+1
-      entries[7] = boundary(x,y,L,t,&user_data);
+      entries[7] = boundary(x,y,L,t,user_data);
+      // fprintf(stderr, "b(%1.2f,%1.2f,%1.2f) = %1.2f\n",x,y,L,entries[7]);
+      // fprintf(stderr, "K(%f,%f,%f,%f) = %f \n",entries[7],a,gamma,Ks,Kfun(entries[7],a,gamma,Ks));
     }else{
       ijk[0] = ix; ijk[1] = iy; ijk[2] = iz+1;
       entries[7] = psb_c_dgetelem(NV_PVEC_P(yvec),
@@ -1189,7 +1233,7 @@ static int jac(N_Vector yvec, N_Vector fvec, SUNMatrix J,
     val[el] = 1/sqdeltah*(
       entries[1]*Kfunprime(entries[2],a,gamma,Ks)*chi(entries[1],entries[2])
       -entries[2]*Kfunprime(entries[2],a,gamma,Ks)*chi(entries[1],entries[2])
-      -1*upstream(entries[1],entries[2],user_data)
+      -1*upstream(entries[2],entries[1],user_data)
     );
     if(ix != 0){
       ijkinsert[0]=ix-1; ijkinsert[1]=iy; ijkinsert[2]=iz;
@@ -1199,9 +1243,9 @@ static int jac(N_Vector yvec, N_Vector fvec, SUNMatrix J,
     //fprintf(stdout, "val = %e\n",val[el]);
     /*  term depending on     (i,j-1,k)        */
     val[el] = 1/sqdeltah*(
-      entries[1]*Kfunprime(entries[4],a,gamma,Ks)*chi(entries[1],entries[4])
-      -entries[2]*Kfunprime(entries[4],a,gamma,Ks)*chi(entries[1],entries[4])
-      -1*upstream(entries[1],entries[4],user_data)
+      entries[1]*Kfunprime(entries[4],a,gamma,Ks)*chi(entries[4],entries[1])
+      -entries[2]*Kfunprime(entries[4],a,gamma,Ks)*chi(entries[4],entries[1])
+      -upstream(entries[1],entries[4],user_data)
     );
     if (iy != 0){
       ijkinsert[0]=ix; ijkinsert[1]=iy-1; ijkinsert[2]=iz;
@@ -1213,7 +1257,7 @@ static int jac(N_Vector yvec, N_Vector fvec, SUNMatrix J,
     val[el] = 1/sqdeltah*(
       entries[1]*Kfunprime(entries[6],a,gamma,Ks)*chi(entries[1],entries[6])
       -entries[2]*Kfunprime(entries[6],a,gamma,Ks)*chi(entries[1],entries[6])
-      -1*upstream(entries[1],entries[6],user_data)
+      -1*upstream(entries[6],entries[1],user_data)
     ) + Kfunprime(entries[6],a,gamma,Ks)/deltah2;
     if (iz != 0){
       ijkinsert[0]=ix; ijkinsert[1]=iy; ijkinsert[2]=iz-1;
@@ -1222,25 +1266,25 @@ static int jac(N_Vector yvec, N_Vector fvec, SUNMatrix J,
     }
     //fprintf(stdout, "val = %e\n",val[el]);
     /* term depending on      (i,j,k)          */
-    val[el] = rho*phi*Sfunprime(entries[1],alpha,beta,thetas,thetar)/dt
-      -(entries[2]*Kfunprime(entries[1],a,gamma,Ks)*chi(entries[1],entries[2]))/sqdeltah
-      -(entries[4]*Kfunprime(entries[1],a,gamma,Ks)*chi(entries[1],entries[4]))/sqdeltah
-      -(entries[6]*Kfunprime(entries[1],a,gamma,Ks)*chi(entries[1],entries[6]))/sqdeltah
-      -(entries[3]*Kfunprime(entries[1],a,gamma,Ks)*(1.0-chi(entries[3],entries[1])))/sqdeltah
-      -(entries[5]*Kfunprime(entries[1],a,gamma,Ks)*(1.0-chi(entries[5],entries[1])))/sqdeltah
-      -(entries[7]*Kfunprime(entries[1],a,gamma,Ks)*(1.0-chi(entries[7],entries[1])))/sqdeltah
+    val[el] = ((rho*phi)/dt)*Sfunprime(entries[1],alpha,beta,thetas,thetar)
+      -(entries[2]*Kfunprime(entries[1],a,gamma,Ks)*chi(entries[2],entries[1]))/sqdeltah
+      -(entries[4]*Kfunprime(entries[1],a,gamma,Ks)*chi(entries[4],entries[1]))/sqdeltah
+      -(entries[6]*Kfunprime(entries[1],a,gamma,Ks)*chi(entries[6],entries[1]))/sqdeltah
+      -(entries[3]*Kfunprime(entries[1],a,gamma,Ks)*(1.0-chi(entries[1],entries[3])))/sqdeltah
+      -(entries[5]*Kfunprime(entries[1],a,gamma,Ks)*(1.0-chi(entries[1],entries[5])))/sqdeltah
+      -(entries[7]*Kfunprime(entries[1],a,gamma,Ks)*(1.0-chi(entries[1],entries[7])))/sqdeltah
       +(entries[1]*Kfunprime(entries[1],a,gamma,Ks)/sqdeltah)*(
-        (1.0-chi(entries[3],entries[1]))+chi(entries[1],entries[2])
-        +(1.0-chi(entries[5],entries[1]))+chi(entries[1],entries[4])
-        +(1.0-chi(entries[7],entries[1]))+chi(entries[1],entries[6])
+        (1.0-chi(entries[1],entries[3]))+chi(entries[2],entries[1])
+        +(1.0-chi(entries[1],entries[5]))+chi(entries[4],entries[1])
+        +(1.0-chi(entries[1],entries[7]))+chi(entries[6],entries[1])
       )
       +(1/sqdeltah)*(
         upstream(entries[3],entries[1],user_data)
-        +upstream(entries[1],entries[2],user_data)
-        +upstream(entries[5],entries[1],user_data)
-        +upstream(entries[1],entries[6],user_data)
-        +upstream(entries[7],entries[1],user_data)
-        +upstream(entries[1],entries[6],user_data)
+        +upstream(entries[2],entries[1],user_data)
+        +upstream(entries[1],entries[5],user_data)
+        +upstream(entries[6],entries[1],user_data)
+        +upstream(entries[1],entries[7],user_data)
+        +upstream(entries[6],entries[1],user_data)
       );
     ijkinsert[0]=ix; ijkinsert[1]=iy; ijkinsert[2]=iz;
     icol[el] = psb_c_l_ijk2idx(ijkinsert,sizes,3,0);
@@ -1248,12 +1292,12 @@ static int jac(N_Vector yvec, N_Vector fvec, SUNMatrix J,
     //fprintf(stdout, "val = %e\n",val[el]);
     /*  term depending on     (i+1,j,k)        */
     val[el] = 1/sqdeltah*(
-      entries[1]*Kfunprime(entries[3],a,gamma,Ks)*chi(entries[3],entries[1])
-      - entries[3]*Kfunprime(entries[3],a,gamma,Ks)*chi(entries[3],entries[1])
-      - upstream(entries[3],entries[1],user_data)
+      entries[1]*Kfunprime(entries[3],a,gamma,Ks)*chi(entries[1],entries[3])
+      - entries[3]*Kfunprime(entries[3],a,gamma,Ks)*chi(entries[1],entries[3])
+      - upstream(entries[1],entries[3],user_data)
     );
-    if (iz != idim-1) {
-      ijkinsert[0]=ix; ijkinsert[1]=iy; ijkinsert[2]=iz+1;
+    if (ix != idim-1) {
+      ijkinsert[0]=ix+1; ijkinsert[1]=iy; ijkinsert[2]=iz;
       icol[el] = psb_c_l_ijk2idx(ijkinsert,sizes,3,0);
       el=el+1;
     }
@@ -1262,26 +1306,24 @@ static int jac(N_Vector yvec, N_Vector fvec, SUNMatrix J,
     val[el] = 1/sqdeltah*(
       entries[1]*Kfunprime(entries[5],a,gamma,Ks)*chi(entries[5],entries[1])
       - entries[5]*Kfunprime(entries[5],a,gamma,Ks)*chi(entries[5],entries[1])
-      - upstream(entries[5],entries[1],user_data)
+      - upstream(entries[1],entries[5],user_data)
     );
     if (iy != idim-1){
-      ijkinsert[0]=ix-1; ijkinsert[1]=iy+1; ijkinsert[2]=iz;
+      ijkinsert[0]=ix; ijkinsert[1]=iy+1; ijkinsert[2]=iz;
       icol[el] = psb_c_l_ijk2idx(ijkinsert,sizes,3,0);
       el=el+1;
     }
-    //fprintf(stdout, "val = %e\n",val[el]);
     /* term depending on      (i,j,k+1)        */
     val[el] = 1/sqdeltah*(
       entries[1]*Kfunprime(entries[7],a,gamma,Ks)*chi(entries[7],entries[1])
       - entries[7]*Kfunprime(entries[7],a,gamma,Ks)*chi(entries[7],entries[1])
-      - upstream(entries[7],entries[1],user_data)
+      - upstream(entries[1],entries[7],user_data)
     ) - Kfunprime(entries[7],a,gamma,Ks)/deltah2;
-    if (ix != idim-1){
-      ijkinsert[0]=ix+1; ijkinsert[1]=iy; ijkinsert[2]=iz;
+    if (iz != idim-1){
+      ijkinsert[0]=ix; ijkinsert[1]=iy; ijkinsert[2]=iz+1;
       icol[el] = psb_c_l_ijk2idx(ijkinsert,sizes,3,0);
       el=el+1;
     }
-    //fprintf(stdout, "val = %e\n",val[el]);
     for (k=0; k<el; k++) irow[k]=glob_row;
     /* Insert the local portion into the Jacobian */
     if ((info=psb_c_dspins(el,irow,icol,val,SM_PMAT_P(J),SM_DESCRIPTOR_P(J)))!=0)
@@ -1289,13 +1331,17 @@ static int jac(N_Vector yvec, N_Vector fvec, SUNMatrix J,
   }
 
   // Assemble and return
-  // if ((info=psb_c_cdasb(SM_DESCRIPTOR_P(J)))!=0)  return(info);
   tic = psb_c_wtime();
   if ((info=psb_c_dspasb(SM_PMAT_P(J),SM_DESCRIPTOR_P(J)))!=0)  return(info);
   toc = psb_c_wtime();
   if (iam == 0) fprintf(stdout, "Buit new Jacobian in %lf s\n",toc-tic);
 
-  SUNPSBLASMatrix_Print(J,"Jacobian","Jacobian.mtx");
+  if (input->verbosity > 1){
+    sprintf(filename,"Jacobian_t%d_it%d_np%d.mtx",input->timestep,input->jacobiancount,iam);
+    SUNPSBLASMatrix_Print(J,"Jacobian",filename);
+  }
+  input->jacobiancount += 1;
+
 
   // We say to the linear solver on what matrix he has to compute the
   // preconditioner
@@ -1366,40 +1412,36 @@ static double boundary(double x, double y, double z, double t, void *user_data){
   ymax   = input->ymax;
   L      = input->L;
 
-  if (z == L){
-    if( x >= xmax/4.0 & x <= 3.0*xmax/4.0 & y >= ymax/4.0 & y <= 3.0*ymax/4.0){
+  if( (x >= xmax/4.0) && (x <= 3.0*xmax/4.0) && (y >= ymax/4.0) && (y <= 3.0*ymax/4.0) && z == L){
       res = 0.0;
-    }
-    else{
+   }
+   else{
       res = pr;
-    }
-  }
-  else{
-    res = pr;
-  }
+   }
+
   return(res);
 }
 
-static double upstream(double pU, double pL, void *user_data){
+static double upstream(double pL, double pU, void *user_data){
   /* Upstream mean for the Ks function */
   struct user_data_for_f *input = user_data;
-  double alpha, gamma, Ks;
+  double a, gamma, Ks;
   double res;
 
-  alpha  = input->alpha;
+  a      = input->a;
   gamma  = input->gamma;
   Ks     = input->Ks;
 
-  if(pU-pL >= 0){
-    res = Kfun(pU,alpha,gamma,Ks);
+  if(pU-pL >= 0.0){
+    res = Kfun(pU,a,gamma,Ks);
   }else{
-    res = Kfun(pL,alpha,gamma,Ks);
+    res = Kfun(pL,a,gamma,Ks);
   }
   return(res);
 }
 
-static double chi(double pU, double pL){
-  if(pU - pL >= 0){
+static double chi(double pL, double pU){
+  if(pU - pL >= 0.0){
     return(1.0);
   }else{
     return(0.0);

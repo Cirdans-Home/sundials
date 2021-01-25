@@ -15,17 +15,17 @@
 -20.0                 ! pr : Value of preassure head at the boundary
 1                     ! Tmax : Maximum time of simulation
 %%%%%%%%%%%  Newton Parameters %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-100                   ! Nt : Number of time steps
+10                    ! Nt : Number of time steps
 20                    ! Max. number of nonlinear iterations
 1e-5                  ! Tolerance for the Newton Method (fnormtol)
 0.0                   ! Stopping tolerance on the min. scaled steplength 0.0 def (scsteptol)
 %%%%%%%%%%%  PSBLAS Parameters %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 CSR                   ! A Storage format CSR COO JAD
-BICGSTAB              ! Iterative method BICGSTAB CGS  BICG BICGSTABL RGMRES
-1                     ! ISTOPC Stopping criterion
+GMRES                 ! Iterative method BICGSTAB CGS  BICG BICGSTABL RGMRES
+2                     ! ISTOPC Stopping criterion
 80                    ! ITMAX
 01                    ! ITRACE
-80                    ! IRST    restart for RGMRES  and BiCGSTABL
+10                    ! IRST    restart for RGMRES  and BiCGSTABL
 1e-9                  ! Tolerance for the Krylov Method (eta parameter)
 ML                    ! Preconditioner NONE  DIAG  BJAC ML
 %%%%%%%%%%%  First smoother (for all levels but coarsest) %%%%%%%%%%%%%%%%%%%%%%

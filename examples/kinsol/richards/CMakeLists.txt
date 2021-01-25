@@ -20,6 +20,7 @@
 # Examples using SUNDIALS linear solvers
 SET(KINSOL_examples
   "richards\;<\;kinsol.inp"
+	"richardsmatrixfree\;<\;kinsol.inp"
   )
 
 # Dependencies for kinsol examples
