@@ -92,7 +92,7 @@ SUNLinearSolver SUNLinSol_PSBLAS(psb_c_SolverOptions options, char methd[], char
   if( strcmp(ptype,"NONE")==0 || strcmp(ptype,"BJAC")==0 || strcmp(ptype,"DIAG")==0 ){
       content->ph=psb_c_new_dprec();
       content->mh=NULL;
-  }else if( strcmp(ptype,"ML")==0 ){
+  }else if( strcmp(ptype,"ML")==0 || strcmp(ptype,"AS")==0  ){
       content->ph=NULL;
       content->mh=amg_c_dprec_new();
   }else{
