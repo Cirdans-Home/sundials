@@ -46,7 +46,6 @@
  #include <sundials/sundials_math.h>    /* access to SUNMAX, SUNRabs, SUNRsqrt*/
  #include <sundials/sundials_iterative.h>
 
-
  #include <mpi.h>
 
  /* ------------------------------------------------
@@ -59,7 +58,7 @@
  static int jac(N_Vector y, N_Vector f, SUNMatrix J,
                 void *user_data, N_Vector tmp1, N_Vector tmp2);
  static int check_flag(void *flagvalue, const char *funcname, int opt, int id);
- static void PrintFinalStats(void *kmem, int i);
+ static void PrintFinalStats(void *kmem, int i, void *user_data);
 
  /*--------------------------------------------------
   * Coefficient functions for J and F
@@ -147,7 +146,7 @@
     N_Vector     u,constraints,su,sc;
     SUNMatrix    J;
     /* Input from file */
-    psb_i_t nparms, idim, Nt, newtonmaxit, istop, itmax, itrace, irst;
+    psb_i_t nparms, idim, Nt, newtonmaxit, istop, itmax, itrace, irst, verbositylevel;
     psb_d_t thetas, thetar, alpha, beta, a, gamma, Ks, Tmax, tol, rho, phi, pr;
     psb_d_t xmax, ymax, L;
     double  fnormtol, scsteptol;
@@ -176,6 +175,7 @@
     psb_d_t dt;
     /* Auxiliary variable */
     int i,k;
+    psb_d_t normu0;
     /* Flags */
     psb_i_t info;
     bool verbose = SUNFALSE;
@@ -224,6 +224,7 @@
       get_iparm(stdin,&newtonmaxit);
       get_dparm(stdin,&fnormtol);
       get_dparm(stdin,&scsteptol);
+      get_iparm(stdin,&verbositylevel);
       //get_hparm(stdin, NULL); // PSBLAS parameters
       get_hparm(stdin,afmt);
       get_hparm(stdin,methd);
@@ -324,6 +325,7 @@
     psb_c_ibcast(*cctxt,1,&newtonmaxit,0);
     psb_c_dbcast(*cctxt,1,&fnormtol,0);
     psb_c_dbcast(*cctxt,1,&scsteptol,0);
+    psb_c_ibcast(*cctxt,1,&verbositylevel,0);
     // PSBLAS parameters
     psb_c_hbcast(*cctxt,afmt,0);
     psb_c_hbcast(*cctxt,methd,0);
@@ -448,7 +450,7 @@
    user_data.timestep = 1;
    user_data.functioncount = 0;
    user_data.jacobiancount = 0;
-   user_data.verbosity = 0; // 0 Do not print/dump anything,
+   user_data.verbosity = verbositylevel; // 0 Do not print/dump anything,
                             // 1 Print what we are computing,
                             // 2 Print and dump everything (MEMORY! SMALL DEBUG)
 
@@ -748,10 +750,6 @@
     user_data.B = SUNPSBLASMatrix(cctxt, cdh);
     user_data.oldpressure = N_VNew_PSBLAS(cctxt, cdh);
 
-    N_VConst(0.0,constraints);      // No constraints
-    N_VConst(1.0,sc);               // Unweighted norm
-    N_VConst(1.0,su);               // Unweighted norm
-
    /*-------------------------------------------------------
     * We can now initialize the time loop
     -------------------------------------------------------*/
@@ -760,13 +758,14 @@
    N_VConst(pr,u);  // Initial Condition
    N_VLinearSum(1.0,u,0.0,user_data.oldpressure,user_data.oldpressure);
 
-   // fprintf(stderr, "K(%f,%f,%f,%f) = %f\n",-10.0,Ks,a,gamma,Kfun(-10.0,a,gamma,Ks));
-   // fprintf(stderr, "s(%f,%f,%f,%f,%f) = %f\n",-10.0,alpha,beta,thetas,thetar,Sfun(-10.0,alpha,beta,thetas,thetar));
-   // fprintf(stderr, "s'(%f,%f,%f,%f,%f) = %f\n",-10.0, alpha, beta, thetas,thetar,Sfunprime(-10.0, alpha, beta, thetas,thetar) );
-   // //
-   // funcprpr(u, su, &user_data);
-   // //
-   // jac(u, su, J, &user_data, sc, sc);
+   // normu0 = SUNRsqrt(N_VDotProd(u,u));
+   N_VConst(0.0,constraints);      // No constraints
+   N_VConst(1.0,sc);               // Unweighted norm
+   N_VConst(1.0,su);               // Unweighted norm
+
+   // DEBUG
+   // info = funcprpr(u,su,&user_data);
+   // info = jac(u, su, J, &user_data, constraints, sc);
 
    /* Initialization of the nonlinear solver */
    kmem = KINCreate();
@@ -789,7 +788,7 @@
    if (check_flag(&info, "KINSetLinearSolver", 1, iam)) psb_c_abort(*cctxt);
    info = KINSetJacFn(kmem,jac);
    if (check_flag(&info, "KINSetJacFn", 1, iam)) psb_c_abort(*cctxt);
-   info = KINSetEtaForm(kmem,KIN_ETACONSTANT); // KIN_ETACONSTANT
+   info = KINSetEtaForm(kmem,KIN_ETACONSTANT);
    if (check_flag(&info, "KINSetEtaForm", 1, iam)) psb_c_abort(*cctxt);
    info = KINSetEtaConstValue(kmem,options.eps);
    if (check_flag(&info, "KINSetEtaConstValue", 1, iam)) psb_c_abort(*cctxt);
@@ -813,7 +812,7 @@
    }
 
    if(iam == 0){
-     PrintFinalStats(kmem,1);
+     PrintFinalStats(kmem,1,&user_data);
    }
    KINFree(&kmem);
 
@@ -939,9 +938,11 @@ static int funcprpr(N_Vector u, N_Vector fval, void *user_data)
    // Who am I?
    psb_c_info(*(NV_CCTXT_P(u)),&iam,&np);
    psb_c_set_index_base(0);
+   info = psb_c_dhalo(NV_PVEC_P(u),NV_DESCRIPTOR_P(u));
+   info = psb_c_dhalo(NV_PVEC_P(uold),NV_DESCRIPTOR_P(uold));
 
    if ( input->verbosity > 1 ){
-      sprintf(infilename,"fin%d_np%d.dat",input->functioncount,np);
+      sprintf(infilename,"fin%d_np%d.dat",input->functioncount,iam);
       outfile1 = fopen(infilename,"w+");
       N_VPrintFile_PSBLAS(u,outfile1);
       fclose(outfile1);
@@ -1059,6 +1060,25 @@ static int funcprpr(N_Vector u, N_Vector fval, void *user_data)
       + upstream(entries[1],entries[6],user_data)*(entries[1]-entries[6]))/sqdeltah
       + (Kfun(entries[6],a,gamma,Ks) - Kfun(entries[7],a,gamma,Ks))/deltah2;
 
+      // DEBUG:
+      // if (glob_row == 401){
+      //    //double up1, up2;
+      //    //up1 = upstream(entries[7],entries[1],user_data);
+      //    //up2 = upstream(entries[1],entries[6],user_data);
+      //    psb_c_l_idx2ijk(ijk,glob_row,sizes,3,0);
+      //    ix = ijk[0]+1; iy = ijk[1]+1; iz = ijk[2]+1;
+      //    fprintf(stdout,"F(%d,%d,%d) = %1.16f\n",ix,iy,iz,val[0]);
+      //    fprintf(stdout,"p(%d,%d,%d) = %1.16f\n",ix,iy,iz,entries[1]);
+      //    fprintf(stdout,"p(%d,%d,%d) = %1.16f\n",ix+1,iy,iz,entries[3]);
+      //    fprintf(stdout,"p(%d,%d,%d) = %1.16f\n",ix-1,iy,iz,entries[2]);
+      //    fprintf(stdout,"p(%d,%d,%d) = %1.16f\n",ix,iy-1,iz,entries[4]);
+      //    fprintf(stdout,"p(%d,%d,%d) = %1.16f\n",ix,iy+1,iz,entries[5]);
+      //    fprintf(stdout,"p(%d,%d,%d) = %1.16f\n",ix,iy,iz+1,entries[7]);
+      //    fprintf(stdout,"p(%d,%d,%d) = %1.16f\n",ix,iy,iz-1,entries[6]);
+      //    //fprintf(stdout,"Kav = %1.16f\n",up1);
+      //    //fprintf(stdout,"Kav = %1.16f\n",up2);
+      // }
+
      irow[0] = glob_row;
      psb_c_dgeins(1,irow,val,NV_PVEC_P(fval),NV_DESCRIPTOR_P(fval));
    }
@@ -1122,6 +1142,7 @@ static int jac(N_Vector yvec, N_Vector fvec, SUNMatrix J,
   // Who am I?
   psb_c_info(*(NV_CCTXT_P(yvec)),&iam,&np);
   psb_c_set_index_base(0);
+  info = psb_c_dhalo(NV_PVEC_P(yvec),NV_DESCRIPTOR_P(yvec));
 
   if (iam == 0 && input->verbosity > 0){
     fprintf(stdout, "----------------------------------------------------------------------\n");
@@ -1412,7 +1433,8 @@ static double boundary(double x, double y, double z, double t, void *user_data){
   ymax   = input->ymax;
   L      = input->L;
 
-  if( (x >= xmax/4.0) && (x <= 3.0*xmax/4.0) && (y >= ymax/4.0) && (y <= 3.0*ymax/4.0) && z == L){
+  if( (x >= xmax/4.0) && (x <= 3.0*xmax/4.0)
+   && (y >= ymax/4.0) && (y <= 3.0*ymax/4.0) && z == L){
       res = 0.0;
    }
    else{
@@ -1437,6 +1459,12 @@ static double upstream(double pL, double pU, void *user_data){
   }else{
     res = Kfun(pL,a,gamma,Ks);
   }
+
+ //  if( res != 0){
+ //     fprintf(stdout,"Kav(%1.16f,%1.16f,%1.16f,%1.16f,%1.16f) = %1.16f\n",
+ //     pL,pU,a,gamma,Ks,res);
+ // }
+
   return(res);
 }
 
@@ -1486,31 +1514,35 @@ static int check_flag(void *flagvalue, const char *funcname, int opt, int id)
   return(0);
 }
 
-static void PrintFinalStats(void *kmem, int i)
+static void PrintFinalStats(void *kmem, int i, void *user_data)
 {
   long int nni, nfe, nli, npe, nps, ncfl, nfeSG;
+  struct user_data_for_f *input = user_data;
   psb_d_t funcnorm;
   int flag;
 
+  // Number of nonlinear solver iteration
   flag = KINGetNumNonlinSolvIters(kmem, &nni);
   check_flag(&flag, "KINGetNumNonlinSolvIters", 1, 0);
+  // Number of function evaluations
   flag = KINGetNumFuncEvals(kmem, &nfe);
   check_flag(&flag, "KINGetNumFuncEvals", 1, 0);
+  // Number of linear iterations
   flag = KINGetNumLinIters(kmem, &nli);
   check_flag(&flag, "KINGetNumLinIters", 1, 0);
-  flag = KINGetNumPrecEvals(kmem, &npe);
-  check_flag(&flag, "KINGetNumPrecEvals", 1, 0);
-  flag = KINGetNumPrecSolves(kmem, &nps);
-  check_flag(&flag, "KINGetNumPrecSolves", 1, 0);
+  // Number of linear convergence failures
   flag = KINGetNumLinConvFails(kmem, &ncfl);
   check_flag(&flag, "KINGetNumLinConvFails", 1, 0);
+  // Number of linear-function evaluation (in our case this should always be zero)
   flag = KINGetNumLinFuncEvals(kmem, &nfeSG);
   check_flag(&flag, "KINGetNumLinFuncEvals", 1, 0);
+  // Last function norm
   flag = KINGetFuncNorm(kmem, &funcnorm);
   check_flag(&flag, "KINGetFuncNorm", 1, 0);
 
   printf("\n\nFinal Statistics for Time Step %d\n",i);
   printf("nni    = %5ld    nli   = %5ld\n", nni, nli);
   printf("nfe    = %5ld    nfeSG = %5ld\n", nfe, nfeSG);
-  printf("nps    = %5ld    npe   = %5ld     ncfl  = %5ld\n", nps, npe, ncfl);
+  printf("njac   = %5d    ncfl  = %5ld\n", input->jacobiancount, ncfl);
+  printf("fnorm  = %1.5e\n",funcnorm);
 }
