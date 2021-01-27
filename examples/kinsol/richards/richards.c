@@ -147,10 +147,11 @@
     SUNMatrix    J;
     /* Input from file */
     psb_i_t nparms, idim, Nt, newtonmaxit, istop, itmax, itrace, irst, verbositylevel;
+    psb_i_t NtToDo, kinsetprintlevel;
     psb_d_t thetas, thetar, alpha, beta, a, gamma, Ks, Tmax, tol, rho, phi, pr;
     psb_d_t xmax, ymax, L;
     double  fnormtol, scsteptol;
-    char garbage[100];
+    char inglobalstrategy[20], inetachoice[20];
     char methd[20],ptype[20],afmt[8]; /* Solve method, p. type, matrix format */
     /* Preconditioner Parameters */
     char smther[20],restr[20],prol[20],solve[20],variant[20]; //1st smoother
@@ -180,7 +181,7 @@
     psb_i_t info;
     bool verbose = SUNFALSE;
     /* Set global strategy flag */
-    int globalstrategy = KIN_NONE;
+    int globalstrategy, etachoice;
     /* Performance variables */
     psb_d_t tic, toc, timecdh;
 
@@ -221,10 +222,14 @@
       get_dparm(stdin,&Tmax);
       //get_hparm(stdin, NULL); // Newton Parameters
       get_iparm(stdin,&Nt);
+      get_iparm(stdin,&NtToDo);
       get_iparm(stdin,&newtonmaxit);
       get_dparm(stdin,&fnormtol);
       get_dparm(stdin,&scsteptol);
+      get_hparm(stdin,inglobalstrategy);
+      get_hparm(stdin,inetachoice);
       get_iparm(stdin,&verbositylevel);
+      get_iparm(stdin,&kinsetprintlevel);
       //get_hparm(stdin, NULL); // PSBLAS parameters
       get_hparm(stdin,afmt);
       get_hparm(stdin,methd);
@@ -322,10 +327,14 @@
     psb_c_dbcast(*cctxt,1,&Tmax,0);
     // Newton Parameters
     psb_c_ibcast(*cctxt,1,&Nt,0);
+    psb_c_ibcast(*cctxt,1,&NtToDo,0);
     psb_c_ibcast(*cctxt,1,&newtonmaxit,0);
     psb_c_dbcast(*cctxt,1,&fnormtol,0);
     psb_c_dbcast(*cctxt,1,&scsteptol,0);
+    psb_c_hbcast(*cctxt,inglobalstrategy,0);
+    psb_c_hbcast(*cctxt,inetachoice,0);
     psb_c_ibcast(*cctxt,1,&verbositylevel,0);
+    psb_c_ibcast(*cctxt,1,&kinsetprintlevel,0);
     // PSBLAS parameters
     psb_c_hbcast(*cctxt,afmt,0);
     psb_c_hbcast(*cctxt,methd,0);
@@ -733,8 +742,8 @@
 
     user_data.LS = &LS;
 
-   /*-------------------------------------------------------
-    * Solution vector and auxiliary data
+   /*------------------------------------------------------*
+    * Solution vector and auxiliary data                   *
     *------------------------------------------------------*/
     constraints = NULL;
     constraints = N_VNew_PSBLAS(cctxt, cdh);
@@ -750,30 +759,47 @@
     user_data.B = SUNPSBLASMatrix(cctxt, cdh);
     user_data.oldpressure = N_VNew_PSBLAS(cctxt, cdh);
 
-   /*-------------------------------------------------------
-    * We can now initialize the time loop
-    -------------------------------------------------------*/
+   /*------------------------------------------------------*
+    * We can now initialize the time loop                  *
+    *------------------------------------------------------*/
    dt = Tmax/(Nt+1);
    user_data.dt = dt;
    N_VConst(pr,u);  // Initial Condition
    N_VLinearSum(1.0,u,0.0,user_data.oldpressure,user_data.oldpressure);
 
-   // normu0 = SUNRsqrt(N_VDotProd(u,u));
    N_VConst(0.0,constraints);      // No constraints
    N_VConst(1.0,sc);               // Unweighted norm
    N_VConst(1.0,su);               // Unweighted norm
 
-   // DEBUG
-   // info = funcprpr(u,su,&user_data);
-   // info = jac(u, su, J, &user_data, constraints, sc);
+   /*------------------------------------------------------*
+    * Initialization of the nonlinear solver               *
+    *------------------------------------------------------*/
+    if (strcmp(inglobalstrategy,"LINESEARCH") == 0){
+      // Apply the lineasearch as detailed in the Kinsol manual.
+      globalstrategy = KIN_LINESEARCH;
+    } else {
+      // Newton is assumed to be already global convergent, i.e, we start
+      // from the basin of attraction of the root, and thus no LINESEARCH is
+      // required.
+      globalstrategy = KIN_NONE;
+    }
+    if (strcmp(inetachoice,"ETACHOICE1") == 0){
+      etachoice = KIN_ETACHOICE1;
+    } else if (strcmp(inetachoice,"ETACHOICE2") == 0) {
+      etachoice = KIN_ETACHOICE2;
+    } else {
+      // In this case the choice of the parameter η is taken from the
+      // ϵ inputed for the Krylov method (since it is indeed used to determine
+      // the accuracy needed for the solution of the linear systems)
+      etachoice = KIN_ETACONSTANT;
+    }
 
-   /* Initialization of the nonlinear solver */
    kmem = KINCreate();
    info = KINInit(kmem, funcprpr, u);
    if (check_flag(&info, "KINInit", 1, iam)) psb_c_abort(*cctxt);
    info = KINSetNumMaxIters(kmem, newtonmaxit);
    if (check_flag(&info, "KINSetNumMaxIters", 1, iam)) psb_c_abort(*cctxt);
-   info = KINSetPrintLevel(kmem, 3);
+   info = KINSetPrintLevel(kmem, kinsetprintlevel);
    if (check_flag(&info, "KINSetPrintLevel", 2, iam)) psb_c_abort(*cctxt);
    info = KINSetUserData(kmem, &user_data);
    if (check_flag(&info, "KINSetUserData", 1, iam)) psb_c_abort(*cctxt);
@@ -788,15 +814,17 @@
    if (check_flag(&info, "KINSetLinearSolver", 1, iam)) psb_c_abort(*cctxt);
    info = KINSetJacFn(kmem,jac);
    if (check_flag(&info, "KINSetJacFn", 1, iam)) psb_c_abort(*cctxt);
-   info = KINSetEtaForm(kmem,KIN_ETACONSTANT);
+   info = KINSetEtaForm(kmem,etachoice);
    if (check_flag(&info, "KINSetEtaForm", 1, iam)) psb_c_abort(*cctxt);
-   info = KINSetEtaConstValue(kmem,options.eps);
-   if (check_flag(&info, "KINSetEtaConstValue", 1, iam)) psb_c_abort(*cctxt);
+   if ( etachoice == KIN_ETACONSTANT) {
+      info = KINSetEtaConstValue(kmem,options.eps);
+      if (check_flag(&info, "KINSetEtaConstValue", 1, iam)) psb_c_abort(*cctxt);
+   }
 
    psb_c_barrier(*cctxt);
    if (iam == 0){
      fprintf(stdout, "\n**********************************************************************\n");
-     fprintf(stdout, "************ Time Step %d of %d ****************************************\n", 1,Nt );
+     fprintf(stdout, "************ Time Step %d of %d ****************************************\n", 1,NtToDo );
    }
    info = KINSol(kmem,           /* KINSol memory block */
                  u,              /* initial guess on input; solution vector */
@@ -816,63 +844,70 @@
    }
    KINFree(&kmem);
 
-   // for(i=2;i<=Nt;i++){  // Main Time Loop
-   //   if (iam == 0){
-   //     fprintf(stdout, "\n**********************************************************************\n");
-   //     fprintf(stdout, " Time Step %d of %d \n", i,Nt );
-   //     fprintf(stdout, "**********************************************************************\n");
-   //     fflush(stdout);
-   //   }
-   //   user_data.timestep = i; // used to compute time depending quantities
-   //
-   //   /* For Euler Time-Stepping we take note of the old pressure value */
-   //   N_VLinearSum(1.0,u,0.0,user_data.oldpressure,user_data.oldpressure);
-   //
-   //   /* We perform the new incomplete Newton time step using as starting point
-   //   the solution at the previous time step.                                  */
-   //   N_VConst(1.0,sc);               // Unweighted norm
-   //   N_VConst(1.0,su);               // Unweighted norm
-   //   kmem = KINCreate();
-   //   info = KINInit(kmem, funcprpr, u);
-   //   if (check_flag(&info, "KINInit", 1, iam)) psb_c_abort(*cctxt);
-   //   info = KINSetNumMaxIters(kmem, newtonmaxit);
-   //   if (check_flag(&info, "KINSetNumMaxIters", 1, iam)) psb_c_abort(*cctxt);
-   //   info = KINSetPrintLevel(kmem, 0);
-   //   if (check_flag(&info, "KINSetPrintLevel", 1, iam)) psb_c_abort(*cctxt);
-   //   info = KINSetUserData(kmem, &user_data);
-   //   if (check_flag(&info, "KINSetUserData", 1, iam)) psb_c_abort(*cctxt);
-   //   info = KINSetConstraints(kmem, constraints);
-   //   if (check_flag(&info, "KINSetConstraints", 1, iam)) psb_c_abort(*cctxt);
-   //   info = KINSetFuncNormTol(kmem, fnormtol);
-   //   if (check_flag(&info, "KINSetFuncNormTol", 1, iam)) psb_c_abort(*cctxt);
-   //   info = KINSetScaledStepTol(kmem, scsteptol);
-   //   if (check_flag(&info, "KINSetScaledStepTol", 1, iam)) psb_c_abort(*cctxt);
-   //   /* Attach the linear solver to KINSOL and set its options */
-   //   info = KINSetLinearSolver(kmem, LS, J);
-   //   if (check_flag(&info, "KINSetLinearSolver", 1, iam)) psb_c_abort(*cctxt);
-   //   info = KINSetJacFn(kmem,jac);
-   //   if (check_flag(&info, "KINSetJacFn", 1, iam)) psb_c_abort(*cctxt);
-   //   info = KINSetEtaForm(kmem,KIN_ETACONSTANT);
-   //   if (check_flag(&info, "KINSetEtaForm", 1, iam)) psb_c_abort(*cctxt);
-   //   info = KINSetEtaConstValue(kmem,options.eps);
-   //   if (check_flag(&info, "KINSetEtaConstValue", 1, iam)) psb_c_abort(*cctxt);
-   //   info = KINSol(kmem,           /* KINSol memory block */
-   //                 u,              /* initial guess on input; solution vector */
-   //                 globalstrategy, /* global strategy choice */
-   //                 su,             /* scaling vector for the variable u */
-   //                 sc);            /* scaling vector for function values fval */
-   //
-   //   if (check_flag(&info, "KINSol", 1, iam)){
-   //     psb_c_abort(*cctxt);
-   //   } else {
-   //     info = 0;
-   //   }
-   //
-   //   if(iam == 0){
-   //     PrintFinalStats(kmem,1);
-   //   }
-   //   KINFree(&kmem);
-   // }
+   if(NtToDo > Nt) NtToDo = Nt;
+
+   for(i=2;i<=NtToDo;i++){  // Main Time Loop
+     if (iam == 0){
+       fprintf(stdout, "************ Time Step %d of %d ****************************************\n", i,NtToDo);
+       fflush(stdout);
+     }
+     user_data.timestep = i;      // used to compute time depending quantities
+     user_data.functioncount = 0; // reset counter for function evals
+     user_data.jacobiancount = 0; // reset counter for Jacobian evals
+
+     /* For Euler Time-Stepping we take note of the old pressure value */
+     N_VLinearSum(1.0,u,0.0,user_data.oldpressure,user_data.oldpressure);
+
+     /* We perform the new incomplete Newton time step using as starting point
+     the solution at the previous time step.                                  */
+     N_VConst(1.0,sc);               // Unweighted norm
+     N_VConst(1.0,su);               // Unweighted norm
+     kmem = KINCreate();
+     info = KINInit(kmem, funcprpr, u);
+     if (check_flag(&info, "KINInit", 1, iam)) psb_c_abort(*cctxt);
+     info = KINSetNumMaxIters(kmem, newtonmaxit);
+     if (check_flag(&info, "KINSetNumMaxIters", 1, iam)) psb_c_abort(*cctxt);
+     info = KINSetPrintLevel(kmem, kinsetprintlevel);
+     if (check_flag(&info, "KINSetPrintLevel", 2, iam)) psb_c_abort(*cctxt);
+     info = KINSetUserData(kmem, &user_data);
+     if (check_flag(&info, "KINSetUserData", 1, iam)) psb_c_abort(*cctxt);
+     info = KINSetConstraints(kmem, constraints);
+     if (check_flag(&info, "KINSetConstraints", 1, iam)) psb_c_abort(*cctxt);
+     info = KINSetFuncNormTol(kmem, fnormtol);
+     if (check_flag(&info, "KINSetFuncNormTol", 1, iam)) psb_c_abort(*cctxt);
+     info = KINSetScaledStepTol(kmem, scsteptol);
+     if (check_flag(&info, "KINSetScaledStepTol", 1, iam)) psb_c_abort(*cctxt);
+     /* Attach the linear solver to KINSOL and set its options */
+     info = KINSetLinearSolver(kmem, LS, J);
+     if (check_flag(&info, "KINSetLinearSolver", 1, iam)) psb_c_abort(*cctxt);
+     info = KINSetJacFn(kmem,jac);
+     if (check_flag(&info, "KINSetJacFn", 1, iam)) psb_c_abort(*cctxt);
+     info = KINSetEtaForm(kmem,etachoice);
+     if (check_flag(&info, "KINSetEtaForm", 1, iam)) psb_c_abort(*cctxt);
+     if ( etachoice == KIN_ETACONSTANT) {
+        info = KINSetEtaConstValue(kmem,options.eps);
+        if (check_flag(&info, "KINSetEtaConstValue", 1, iam)) psb_c_abort(*cctxt);
+     }
+
+     psb_c_barrier(*cctxt);
+     info = KINSol(kmem,           /* KINSol memory block */
+                   u,              /* initial guess on input; solution vector */
+                   globalstrategy, /* global strategy choice */
+                   su,             /* scaling vector for the variable u */
+                   sc);            /* scaling vector for function values fval */
+
+     if (check_flag(&info, "KINSol", 1, iam)){
+       psb_c_abort(*cctxt);
+     } else {
+       info = 0;
+     }
+
+     if(iam == 0){
+       PrintFinalStats(kmem,i,&user_data);
+     }
+     KINFree(&kmem);
+   }
+   fprintf(stdout, "\n**********************************************************************\n");
 
    /* Free the Memory */
 

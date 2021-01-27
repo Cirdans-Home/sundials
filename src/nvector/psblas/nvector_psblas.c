@@ -298,11 +298,11 @@ void N_VPrintFile_PSBLAS(N_Vector x, FILE* outfile)
 
   for (i = 0; i < N; i++) {
 #if defined(SUNDIALS_EXTENDED_PRECISION)
-    fprintf(outfile, "%Lg\n", xd[i]);
+    fprintf(outfile, "%1.16f\n", xd[i]);
 #elif defined(SUNDIALS_DOUBLE_PRECISION)
-    fprintf(outfile, "%g\n", xd[i]);
+    fprintf(outfile, "%1.16f\n", xd[i]);
 #else
-    fprintf(outfile, "%g\n", xd[i]);
+    fprintf(outfile, "%1.16f\n", xd[i]);
 #endif
   }
   fprintf(outfile, "\n");
@@ -399,16 +399,15 @@ N_Vector N_VCloneEmpty_PSBLAS(N_Vector w)
 N_Vector N_VClone_PSBLAS(N_Vector w)
 {
   N_Vector v;
-  psb_c_dvector *data;
+  psb_i_t info;
 
   v = NULL;
   v = N_VCloneEmpty_PSBLAS(w);
   if (v == NULL) return(NULL);
 
   NV_OWN_DATA_P(v) = SUNTRUE;
-  data = psb_c_new_dvector();
-  psb_c_dgeall(data,NV_DESCRIPTOR_P(w));
-  NV_PVEC_P(v)     = data;
+  NV_PVEC_P(v)     = psb_c_new_dvector();
+  info = psb_c_dgeall(NV_PVEC_P(v),NV_DESCRIPTOR_P(w));
 
   return(v);
 }
@@ -657,14 +656,12 @@ int N_VLinearCombination_PSBLAS(int nvec, realtype* c, N_Vector* V,N_Vector z){
   }
 
   if(z == V[0]){
-    printf("Primo vettore uguale a quelli da sommare!\n");
     ierr = psb_c_dgeaxpby((psb_d_t) 0.0,NV_PVEC_P(V[0]), c[0], NV_PVEC_P(z),NV_DESCRIPTOR_P(V[0]));
     for(j=1;j<nvec;j++){
       ierr = psb_c_dgeaxpbyz( c[j], NV_PVEC_P(V[j]),1.0,NV_PVEC_P(z), NV_PVEC_P(z), NV_DESCRIPTOR_P(z));
     }
   }
   else{
-    printf("Primo vettore diverso da quelli da sommare!\n");
     for(j=0;j<nvec;j++){
       ierr = psb_c_dgeaxpby( c[j], NV_PVEC_P(V[j]), 1.0, NV_PVEC_P(z), NV_DESCRIPTOR_P(z));
     }
