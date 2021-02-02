@@ -862,19 +862,44 @@
    toc = psb_c_wtime();
    timesolve = toc-tic;
 
-
-
-   if (check_flag(&info, "KINSol", 1, iam)){
-     psb_c_abort(*cctxt);
-   } else {
-     info = 0;
-   }
-
    if(iam == 0){
      PrintFinalStats(kmem,1,&user_data);
      printf("Step solve time: %1.3e\n", timesolve);
      UpdatePerformanceStats(kmem, 1, timesolve, &user_data, &perf_info);
    }
+
+   if (check_flag(&info, "KINSol", 1, iam)){
+      if(iam == 0){
+         /* Write the performance on log file */
+         sprintf(outfilename,"performancerunon_%dprocess_%ddofs.csv", np, idim);
+         outfileforperformance = fopen(outfilename,"w+");
+         fprintf(outfileforperformance,"Step,Njac,Nfev,NNLin,NLin,GTime\n");
+         fprintf(outfileforperformance, "%d,%d,%d,%d,%d,%lf \n",
+            0,
+            perf_info.numjacobianspertimestep[0],
+            perf_info.numfevalspertimestep[0],
+            perf_info.numofnonliniterationpertimestep[0],
+            perf_info.liniterperstep[0],
+            perf_info.timepertimestep[0]);
+         fclose(outfileforperformance);
+      }
+      free(perf_info.numjacobianspertimestep);
+      free(perf_info.numfevalspertimestep);
+      free(perf_info.liniterperstep);
+      free(perf_info.timepertimestep);
+      free(perf_info.numofnonliniterationpertimestep);
+      N_VDestroy(u);
+      N_VDestroy(constraints);
+      N_VDestroy(sc);
+      N_VDestroy(su);
+      SUNMatDestroy(J);
+      SUNLinSolFree(LS);
+      free(cdh);
+      psb_c_abort(*cctxt);
+   } else {
+     info = 0;
+   }
+
    KINFree(&kmem);
 
    if(NtToDo > Nt) NtToDo = Nt;
@@ -933,17 +958,46 @@
      toc = psb_c_wtime();
      timesolve = toc-tic;
 
-     if (check_flag(&info, "KINSol", 1, iam)){
-       psb_c_abort(*cctxt);
-     } else {
-       info = 0;
-     }
-
      if(iam == 0){
        PrintFinalStats(kmem,i,&user_data);
        printf("Step solve time: %1.3e\n", timesolve);
        UpdatePerformanceStats(kmem, i, timesolve, &user_data, &perf_info);
      }
+
+     if (check_flag(&info, "KINSol", 1, iam)){
+        if(iam == 0){
+        /* Write the performance on log file */
+        sprintf(outfilename,"performancerunon_%dprocess_%ddofs.csv", np, idim);
+        outfileforperformance = fopen(outfilename,"w+");
+        fprintf(outfileforperformance,"Step,Njac,Nfev,NNLin,NLin,GTime\n");
+        for (int j=0; j < i; j++){
+           fprintf(outfileforperformance, "%d,%d,%d,%d,%d,%lf \n",
+              j,
+              perf_info.numjacobianspertimestep[j],
+              perf_info.numfevalspertimestep[j],
+              perf_info.numofnonliniterationpertimestep[j],
+              perf_info.liniterperstep[j],
+              perf_info.timepertimestep[j]);
+        }
+       }
+       fclose(outfileforperformance);
+       free(perf_info.numjacobianspertimestep);
+       free(perf_info.numfevalspertimestep);
+       free(perf_info.liniterperstep);
+       free(perf_info.timepertimestep);
+       free(perf_info.numofnonliniterationpertimestep);
+       N_VDestroy(u);
+       N_VDestroy(constraints);
+       N_VDestroy(sc);
+       N_VDestroy(su);
+       SUNMatDestroy(J);
+       SUNLinSolFree(LS);
+       free(cdh);
+       psb_c_abort(*cctxt);
+     } else {
+       info = 0;
+     }
+
      KINFree(&kmem);
    }
    fprintf(stdout, "\n**********************************************************************\n");
@@ -963,6 +1017,7 @@
             perf_info.liniterperstep[i],
             perf_info.timepertimestep[i]);
       }
+      fclose(outfileforperformance);
    }
 
    /* Free the Memory */
