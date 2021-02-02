@@ -59,6 +59,8 @@
                 void *user_data, N_Vector tmp1, N_Vector tmp2);
  static int check_flag(void *flagvalue, const char *funcname, int opt, int id);
  static void PrintFinalStats(void *kmem, int i, void *user_data);
+ static void UpdatePerformanceStats(void *kmem, int i, psb_d_t timeofthestep,
+      void *user_data, void *perf_info);
 
  /*--------------------------------------------------
   * Coefficient functions for J and F
@@ -129,6 +131,15 @@
     psb_i_t verbosity;
   };
 
+  struct performanceinfo {
+    psb_i_t *numjacobianspertimestep;
+    psb_i_t *numfevalspertimestep;
+    psb_i_t *numofnonliniterationpertimestep;
+    psb_d_t *timepertimestep;
+    psb_i_t *liniterperstep;
+    psb_i_t numberoftimesteps;
+ };
+
  #define NBMAX       20
 
  int main(int argc, char *argv[]){
@@ -183,7 +194,10 @@
     /* Set global strategy flag */
     int globalstrategy, etachoice;
     /* Performance variables */
-    psb_d_t tic, toc, timecdh;
+    struct performanceinfo perf_info;
+    FILE *outfileforperformance;
+    char outfilename[100];
+    psb_d_t tic, toc, timecdh, timesolve;
 
     cctxt = psb_c_new_ctxt();
     psb_c_init(cctxt);
@@ -742,6 +756,17 @@
 
     user_data.LS = &LS;
 
+    /*-----------------------------------------------------*
+     * Setting up performance information structure        *
+     *-----------------------------------------------------*/
+
+    perf_info.numberoftimesteps = NtToDo;
+    perf_info.numjacobianspertimestep = (psb_i_t *) malloc(NtToDo*sizeof(psb_i_t));
+    perf_info.numfevalspertimestep = (psb_i_t *) malloc(NtToDo*sizeof(psb_i_t));
+    perf_info.timepertimestep = (psb_d_t *) malloc(NtToDo*sizeof(psb_d_t));
+    perf_info.liniterperstep = (psb_i_t *) malloc(NtToDo*sizeof(psb_i_t));
+    perf_info.numofnonliniterationpertimestep = (psb_i_t *) malloc(NtToDo*sizeof(psb_i_t));
+
    /*------------------------------------------------------*
     * Solution vector and auxiliary data                   *
     *------------------------------------------------------*/
@@ -826,11 +851,17 @@
      fprintf(stdout, "\n**********************************************************************\n");
      fprintf(stdout, "************ Time Step %d of %d ****************************************\n", 1,NtToDo );
    }
+   psb_c_barrier(*cctxt);
+   tic = psb_c_wtime();
    info = KINSol(kmem,           /* KINSol memory block */
                  u,              /* initial guess on input; solution vector */
                  globalstrategy, /* global strategy choice */
                  su,             /* scaling vector for the variable u */
                  sc);            /* scaling vector for function values fval */
+   psb_c_barrier(*cctxt);
+   toc = psb_c_wtime();
+   timesolve = toc-tic;
+
 
 
    if (check_flag(&info, "KINSol", 1, iam)){
@@ -841,6 +872,8 @@
 
    if(iam == 0){
      PrintFinalStats(kmem,1,&user_data);
+     printf("Step solve time: %1.3e\n", timesolve);
+     UpdatePerformanceStats(kmem, 1, timesolve, &user_data, &perf_info);
    }
    KINFree(&kmem);
 
@@ -890,11 +923,15 @@
      }
 
      psb_c_barrier(*cctxt);
+     tic = psb_c_wtime();
      info = KINSol(kmem,           /* KINSol memory block */
                    u,              /* initial guess on input; solution vector */
                    globalstrategy, /* global strategy choice */
                    su,             /* scaling vector for the variable u */
                    sc);            /* scaling vector for function values fval */
+     psb_c_barrier(*cctxt);
+     toc = psb_c_wtime();
+     timesolve = toc-tic;
 
      if (check_flag(&info, "KINSol", 1, iam)){
        psb_c_abort(*cctxt);
@@ -904,13 +941,37 @@
 
      if(iam == 0){
        PrintFinalStats(kmem,i,&user_data);
+       printf("Step solve time: %1.3e\n", timesolve);
+       UpdatePerformanceStats(kmem, i, timesolve, &user_data, &perf_info);
      }
      KINFree(&kmem);
    }
    fprintf(stdout, "\n**********************************************************************\n");
 
+   psb_c_barrier(*cctxt);
+   if(iam == 0){
+      /* Write the performance on log file */
+      sprintf(outfilename,"performancerunon_%dprocess_%ddofs.csv", np, idim);
+      outfileforperformance = fopen(outfilename,"w+");
+      fprintf(outfileforperformance,"Step,Njac,Nfev,NNLin,NLin,GTime\n");
+      for (i=0; i < NtToDo; i++){
+         fprintf(outfileforperformance, "%d,%d,%d,%d,%d,%lf \n",
+            i,
+            perf_info.numjacobianspertimestep[i],
+            perf_info.numfevalspertimestep[i],
+            perf_info.numofnonliniterationpertimestep[i],
+            perf_info.liniterperstep[i],
+            perf_info.timepertimestep[i]);
+      }
+   }
+
    /* Free the Memory */
 
+   free(perf_info.numjacobianspertimestep);
+   free(perf_info.numfevalspertimestep);
+   free(perf_info.liniterperstep);
+   free(perf_info.timepertimestep);
+   free(perf_info.numofnonliniterationpertimestep);
    N_VDestroy(u);
    N_VDestroy(constraints);
    N_VDestroy(sc);
@@ -1029,7 +1090,6 @@ static int funcprpr(N_Vector u, N_Vector fval, void *user_data)
                                   NV_DESCRIPTOR_P(u)); // u^(l)_{i,j,k}
      if (ix == 0) {        // Cannot do i-1
        entries[2] = boundary(0.0,y,z,t,user_data); // u^(l)_{i-1,j,k}
-       //  fprintf(stderr, "b(%1.2f,%1.2f,%1.2f) = %1.2f\n",0.0,y,z,entries[2]);
      }else{
        ijk[0] = ix - 1; ijk[1] = iy; ijk[2] = iz;
        entries[2] = psb_c_dgetelem(NV_PVEC_P(u),
@@ -1038,7 +1098,6 @@ static int funcprpr(N_Vector u, N_Vector fval, void *user_data)
      }
      if (ix == idim -1){
        entries[3] = boundary(L,y,z,t,user_data);
-       //  fprintf(stderr, "b(%1.2f,%1.2f,%1.2f) = %1.2f\n",L,y,z,entries[3]);
      }else{
        ijk[0] = ix+1; ijk[1] = iy; ijk[2] = iz;
        entries[3] = psb_c_dgetelem(NV_PVEC_P(u),
@@ -1047,7 +1106,6 @@ static int funcprpr(N_Vector u, N_Vector fval, void *user_data)
      }
      if (iy == 0){       // Cannot do j-1
        entries[4] = boundary(x,0.0,z,t,user_data); // u^(l)_{i+1,j,k}
-       //  fprintf(stderr, "b(%1.2f,%1.2f,%1.2f) = %1.2f\n",x,0.0,z,entries[4]);
      }else{
        ijk[0] = ix; ijk[1] = iy-1; ijk[2] = iz;
        entries[4] = psb_c_dgetelem(NV_PVEC_P(u),
@@ -1056,7 +1114,6 @@ static int funcprpr(N_Vector u, N_Vector fval, void *user_data)
      }
      if (iy == idim -1){
        entries[5] = boundary(x,L,z,t,user_data);
-       //  fprintf(stderr, "b(%1.2f,%1.2f,%1.2f) = %1.2f\n",x,L,z,entries[5]);
      }else{
        ijk[0] = ix; ijk[1] = iy+1; ijk[2] = iz;
        entries[5] = psb_c_dgetelem(NV_PVEC_P(u),
@@ -1065,8 +1122,6 @@ static int funcprpr(N_Vector u, N_Vector fval, void *user_data)
      }
      if (iz == 0){       // Cannot do k-1
        entries[6] = boundary(x,y,0.0,t,user_data);
-       //  fprintf(stderr, "b(%1.2f,%1.2f,%1.2f) = %1.2f\n",x,y,0.0,entries[6]);
-       // fprintf(stderr, "K(%f,%f,%f,%f) = %f \n",entries[6],a,gamma,Ks,Kfun(entries[6],a,gamma,Ks));
      }else{
        ijk[0] = ix; ijk[1] = iy; ijk[2] = iz-1;
        entries[6] = psb_c_dgetelem(NV_PVEC_P(u),
@@ -1075,8 +1130,6 @@ static int funcprpr(N_Vector u, N_Vector fval, void *user_data)
      }
      if (iz == idim -1){ // Cannot do k+1
        entries[7] = boundary(x,y,L,t,user_data);
-       // fprintf(stderr, "b(%1.2f,%1.2f,%1.2f) = %1.2f\n",x,y,L,entries[7]);
-       // fprintf(stderr, "K(%f,%f,%f,%f) = %f \n",entries[7],a,gamma,Ks,Kfun(entries[7],a,gamma,Ks));
      }else{
        ijk[0] = ix; ijk[1] = iy; ijk[2] = iz+1;
        entries[7] = psb_c_dgetelem(NV_PVEC_P(u),
@@ -1580,4 +1633,39 @@ static void PrintFinalStats(void *kmem, int i, void *user_data)
   printf("nfe    = %5ld    nfeSG = %5ld\n", nfe, nfeSG);
   printf("njac   = %5d    ncfl  = %5ld\n", input->jacobiancount, ncfl);
   printf("fnorm  = %1.5e\n",funcnorm);
+}
+
+static void UpdatePerformanceStats(void *kmem, int i, psb_d_t timeofthestep,
+      void *user_data, void *perf_info){
+   long int nni, nfe, nli, npe, nps, ncfl, nfeSG;
+   struct user_data_for_f *input = user_data;
+   struct performanceinfo *pinfo = perf_info;
+   psb_d_t funcnorm;
+   int flag;
+
+   // Number of nonlinear solver iteration
+   flag = KINGetNumNonlinSolvIters(kmem, &nni);
+   check_flag(&flag, "KINGetNumNonlinSolvIters", 1, 0);
+   // Number of function evaluations
+   flag = KINGetNumFuncEvals(kmem, &nfe);
+   check_flag(&flag, "KINGetNumFuncEvals", 1, 0);
+   // Number of linear iterations
+   flag = KINGetNumLinIters(kmem, &nli);
+   check_flag(&flag, "KINGetNumLinIters", 1, 0);
+   // Number of linear convergence failures
+   flag = KINGetNumLinConvFails(kmem, &ncfl);
+   check_flag(&flag, "KINGetNumLinConvFails", 1, 0);
+   // Number of linear-function evaluation (in our case this should always be zero)
+   flag = KINGetNumLinFuncEvals(kmem, &nfeSG);
+   check_flag(&flag, "KINGetNumLinFuncEvals", 1, 0);
+   // Last function norm
+   flag = KINGetFuncNorm(kmem, &funcnorm);
+   check_flag(&flag, "KINGetFuncNorm", 1, 0);
+
+   pinfo->numjacobianspertimestep[i-1] = input->jacobiancount;
+   pinfo->numfevalspertimestep[i-1] = nfe;
+   pinfo->timepertimestep[i-1] = timeofthestep;
+   pinfo->liniterperstep[i-1] = nli;
+   pinfo->numofnonliniterationpertimestep[i-1] = nni;
+
 }
