@@ -117,7 +117,9 @@
   *-----------------------------------------------*/
   struct user_data_for_f {
     psb_l_t *vl;          // Local portion of the global indexs
-    psb_i_t idim;         // Number of dofs in one direction
+    psb_i_t idim;         // Number of dofs in direction x
+    psb_i_t jdim;         // Number of dofs in direction y
+    psb_i_t kdim;         // Number of dofs in direction z
     psb_i_t nl;           // Number of blocks in the distribution
     psb_d_t thetas, thetar, alpha, beta, a, gamma, Ks, rho, phi, pr; // Problem Parameters
     psb_d_t xmax,ymax,L;  // Size of the box
@@ -140,7 +142,7 @@
     psb_i_t numberoftimesteps;
  };
 
- #define NBMAX       20
+ #define NBMAX       30
 
  int main(int argc, char *argv[]){
 
@@ -149,15 +151,18 @@
     psb_c_SolverOptions options;             /* Solver options              */
     struct user_data_for_f user_data;        /* User data for computing F,J */
     /* BLOCK data distribution */
+    psb_i_t DataDistribution;                /* Data Distribution 2D/3D     */
     psb_l_t ng,nl,*vl;
-    psb_i_t nb,sizes[3],ijk[3],ijkinsert[3];
-    psb_l_t ix, iy, iz, el, glob_row;
+    psb_i_t ix, iy, iz, el, nb,sizes[3],ijk[3],ijkinsert[3], dims[3];
+    psb_l_t glob_row;
+    psb_i_t npx, npy, npz, mynx, myny, mynz, iamx, iamy, iamz;
+    psb_i_t *bndx, *bndy, *bndz;
     psb_l_t irow[10*NBMAX], icol[10*NBMAX];
     /* Problem data */
     N_Vector     u,constraints,su,sc;
     SUNMatrix    J;
     /* Input from file */
-    psb_i_t nparms, idim, Nt, newtonmaxit, istop, itmax, itrace, irst, verbositylevel;
+    psb_i_t nparms, idim, jdim, kdim, Nt, newtonmaxit, istop, itmax, itrace, irst, verbositylevel;
     psb_i_t NtToDo, kinsetprintlevel;
     psb_d_t thetas, thetar, alpha, beta, a, gamma, Ks, Tmax, tol, rho, phi, pr;
     psb_d_t xmax, ymax, L;
@@ -220,6 +225,8 @@
     if (iam == 0) {
       //get_hparm(stdin, NULL); // Problem Parameters
       get_iparm(stdin,&idim);
+      get_iparm(stdin,&jdim);
+      get_iparm(stdin,&kdim);
       get_dparm(stdin,&xmax);
       get_dparm(stdin,&ymax);
       get_dparm(stdin,&L);
@@ -234,6 +241,7 @@
       get_dparm(stdin,&phi);
       get_dparm(stdin,&pr);
       get_dparm(stdin,&Tmax);
+      get_iparm(stdin,&DataDistribution);
       //get_hparm(stdin, NULL); // Newton Parameters
       get_iparm(stdin,&Nt);
       get_iparm(stdin,&NtToDo);
@@ -286,8 +294,9 @@
       get_hparm(stdin,aggr_ord);     // Ordering of aggregation NATURAL DEGREE
       get_hparm(stdin,aggr_filter);  // Filtering of matrix:  FILTER NOFILTER
       get_dparm(stdin,&mncrratio);   // Coarsening ratio, if < 0 use library default1
-      get_iparm(stdin,&thrvsz);      // Number of thresholds in vector, next line ignored if <= 0
-      get_dparm2(stdin,athresv,thrvsz); // Thresholds
+      //get_iparm(stdin,&thrvsz);      // Number of thresholds in vector, next line ignored if <= 0
+      //if(thrvsz < 0) thrvsz = 1;
+      //get_dparm2(stdin,athresv,thrvsz); // Thresholds
       get_dparm(stdin,&athres);      // Smoothed aggregation threshold, ignored if < 0
       get_iparm(stdin,&bcm_alg);     // BCM method: 0 PREIS, 1 MC64, 2 SPRAL (auction)
       get_iparm(stdin,&bcm_sweeps);  // BCM Pairing sweeps
@@ -321,10 +330,12 @@
       fprintf(stdout, "van Genuchten empirical parameters : (%1.3e,%1.3f,%1.3e,%1.3f)\n",
         alpha,beta,a,gamma);
       fprintf(stdout, "Initial value of the pressure head is %lf cm\n",pr);
-      fprintf(stdout, "Solving in a box [0,%lf]x[0,%lf]x[0,%lf] with %dx%dx%d dofs\n",xmax,ymax,L,idim,idim,idim);
+      fprintf(stdout, "Solving in a box [0,%lf]x[0,%lf]x[0,%lf] with %dx%dx%d dofs\n",xmax,ymax,L,idim,jdim,kdim);
       fflush(stdout);
    }
     psb_c_ibcast(*cctxt,1,&idim,0);
+    psb_c_ibcast(*cctxt,1,&jdim,0);
+    psb_c_ibcast(*cctxt,1,&kdim,0);
     psb_c_dbcast(*cctxt,1,&xmax,0);
     psb_c_dbcast(*cctxt,1,&ymax,0);
     psb_c_dbcast(*cctxt,1,&L,0);
@@ -339,6 +350,7 @@
     psb_c_dbcast(*cctxt,1,&phi,0);
     psb_c_dbcast(*cctxt,1,&pr,0);
     psb_c_dbcast(*cctxt,1,&Tmax,0);
+    psb_c_ibcast(*cctxt,1,&DataDistribution,0);
     // Newton Parameters
     psb_c_ibcast(*cctxt,1,&Nt,0);
     psb_c_ibcast(*cctxt,1,&NtToDo,0);
@@ -415,47 +427,127 @@
     psb_c_ibcast(*cctxt,1,&printiter,0); // ITRACE for residual print
     psb_c_dbcast(*cctxt,1,&ctol,0);      // Tolerance for exit from BJAC
 
-    /* ------------------------------------------------------------------------
-     * Domain size compatibility check
-     * The present version of the codes assumes a cube, this will be generalized
-     *------------------------------------------------------------------------*/
-   if( (xmax != ymax) || (xmax != L) || (ymax != L)){
-     fprintf(stderr, "\nAbort, works only on cube for now!\n");
-     fflush(stderr);
-     psb_c_abort(*cctxt);
-   }
-
     /*-------------------------------------------------------------------------
      * Perform a 3D BLOCK data distribution
      *------------------------------------------------------------------------*/
     if(iam==0){
-      fprintf(stdout, "\nStarting 3D BLOCK data distribution\n");
+      fprintf(stdout, "\nStarting %dD BLOCK data distribution\n", DataDistribution);
       fflush(stdout);
     }
     psb_c_barrier(*cctxt);
     cdh = psb_c_new_descriptor();
     psb_c_set_index_base(0);
-    ng = ((psb_l_t) idim)*idim*idim;
-    nb = (ng+np-1)/np;
-    nl = nb;
-    if ( (ng -iam*nb) < nl) nl = ng -iam*nb;
-      fprintf(stdout,"%d: Input data %d %ld %d %ld\n",iam,idim,ng,nb, nl);
-    if ((vl=malloc((nb+1)*sizeof(psb_l_t)))==NULL) {
-      fprintf(stderr,"On %d: malloc failure\n",iam);
-      psb_c_abort(*cctxt);
-   }
-   i = ((psb_l_t)iam) * nb;
-   for (k=0; k<= nl; k++){
-    vl[k] = i+k;
-   }
-   if ((info=psb_c_cdall_vl(nl,vl,*cctxt,cdh))!=0) {
-      fprintf(stderr,"From cdall: %d\nBailing out\n",info);
+    if (DataDistribution == 3) {
+       /* 3D Block Distribution : used when we scale proportionally all the
+          grid size with the number of processes.                             */
+       ng = ((psb_l_t) idim)*jdim*kdim;
+       nb = (ng+np-1)/np;
+       nl = nb;
+       if ( (ng -iam*nb) < nl) nl = ng -iam*nb;
+         fprintf(stdout,"%d: Input data %d %ld %d %ld\n",iam,idim,ng,nb, nl);
+       if ((vl=malloc((nb+1)*sizeof(psb_l_t)))==NULL) {
+         fprintf(stderr,"On %d: malloc failure\n",iam);
+         psb_c_abort(*cctxt);
+      }
+      i = ((psb_l_t)iam) * nb;
+      for (k=0; k < nl; k++){
+       vl[k] = i+k;
+      }
+      if ((info=psb_c_cdall_vl(nl,vl,*cctxt,cdh))!=0) {
+         fprintf(stderr,"From cdall: %d\nBailing out\n",info);
+         psb_c_abort(*cctxt);
+      }
+   } else if (DataDistribution == 2) {
+      /* We build here the communicator for the case in which only Nx and Ny
+      scale with the number of processes and Nz remains fixed. We use the MPI
+      function to divide the grid on the xy plane, then we impose that the
+      number of processes along z is 1: npx × npy × 1 processor grid*/
+      ng = ((psb_l_t) idim)*jdim*kdim;
+      if( np == 1){
+         dims[0] = 0; dims[1] = 0; dims[2] = 0;
+      } else {
+         dims[0] = 0; dims[1] = 0; dims[2] = 1;
+      }
+      info = MPI_Dims_create( np , 3, dims);
+      npx = dims[0];
+      npy = dims[1];
+      npz = dims[2];
+      sizes[0] = npx; sizes[1] = npy; sizes[2] = npz;
+
+      if(iam == 0 && verbositylevel > 0)
+         fprintf(stderr, "Processor grid is [%d,%d,%d]\n",npx,npy,npz);
+
+      // These vectors will contain tnhe bounds on the indexes owned by the
+      // different processes
+      bndx = (psb_i_t *) malloc( (npx+1)*sizeof(psb_i_t) );
+      bndy = (psb_i_t *) malloc( (npy+1)*sizeof(psb_i_t) );
+      bndz = (psb_i_t *) malloc( (npz+1)*sizeof(psb_i_t) );
+
+      info = psb_c_i_idx2ijk(ijk,iam,sizes,3,0);
+      iamx = ijk[0]; iamy = ijk[1]; iamz = ijk[2];
+
+      // Now let's split the 3D cube in hexahedra
+      info = psb_c_dist1didx(idim,npx,0,npx+1,bndx);
+      mynx = bndx[iamx+1] - bndx[iamx];
+      fprintf(stderr, "Process %d mynx = %d - %d = %d\n",iam,bndx[iamx+1],bndx[iamx],mynx);
+      info = psb_c_dist1didx(jdim,npy,0,npy+1,bndy);
+      myny = bndy[iamy+1] - bndy[iamy];
+      fprintf(stderr, "Process %d myny = %d - %d = %d\n",iam,bndy[iamy+1],bndy[iamy],myny);
+      info = psb_c_dist1didx(kdim,npz,0,npz+1,bndz);
+      mynz = bndz[iamz+1] - bndz[iamz];
+      fprintf(stderr, "Process %d myny = %d - %d = %d\n",iam,bndz[iamz+1],bndz[iamz],mynz);
+
+      // How many indices do I own?
+      nl = mynx*myny*mynz;
+      fprintf(stderr, "Process %d owns %ld indexes (%d,%d,%d) \n",
+         iam, nl, mynx, myny, mynz);
+      // We populate the vector containing the local indexes we know of
+      vl = (psb_l_t *) malloc((nl+1)*sizeof(psb_l_t));
+      sizes[0] = idim; sizes[1] = jdim; sizes[2] = kdim;
+      nb = 0;
+      for (int i = bndx[iamx]; i < bndx[iamx+1]; i++){
+         for(int j = bndy[iamy]; j < bndy[iamy+1]; j++){
+            for(int k = bndz[iamz]; k < bndz[iamz+1]; k++){
+               ijk[0] = i; ijk[1] = j; ijk[2] = k;
+               vl[nb] = psb_c_l_ijk2idx(ijk,sizes,3,0);
+               nb = nb+1;
+            }
+         }
+      }
+      if( nb != nl ){
+         fprintf(stderr, "Inizialization error: NR vs NLR %d /= %ld (%d,%d,%d)\n"
+            ,nb,nl,mynx,myny,mynz);
+         free(vl);
+         free(bndx);
+         free(bndy);
+         free(bndz);
+         psb_c_barrier(*cctxt);
+         psb_c_abort(*cctxt);
+      }
+      // Then we allocate the comunicator on the given global/local indexes
+      if ((info=psb_c_cdall_vl(nl,vl,*cctxt,cdh))!=0) {
+         fprintf(stderr,"From cdall: %d\nBailing out\n",info);
+         free(vl);
+         free(bndx);
+         free(bndy);
+         free(bndz);
+         psb_c_abort(*cctxt);
+      }
+      // we no longer need these entries:
+      free(bndx);
+      free(bndy);
+      free(bndz);
+   } else {
+      fprintf(stderr, "Unknown Data Distribution %d\n",DataDistribution);
+      psb_c_barrier(*cctxt);
       psb_c_abort(*cctxt);
    }
    /* We store into the user_data_for_f the owned indices, these are then
    used to compute the Jacobian and the function evaluations */
    user_data.vl     = vl;
    user_data.idim   = idim;
+   user_data.jdim   = jdim;
+   user_data.kdim   = kdim;
    user_data.xmax   = xmax;
    user_data.ymax   = ymax;
    user_data.L      = L;
@@ -480,8 +572,8 @@
    /*We need to reuse the same communicator many times, namely every time we
    need to populate a new Jacobian. Therefore we use the psb_c_cdins routine
    to generate the distributed adjacency graph for our problem.              */
-   sizes[0] = idim; sizes[1] = idim; sizes[2] = idim;
-   for (i=0; i <= nl;  i++) {
+   sizes[0] = idim; sizes[1] = jdim; sizes[2] = kdim;
+   for (i=0; i < nl;  i++) {
      glob_row=vl[i];
      el = 0;
      psb_c_l_idx2ijk(ijk,glob_row,sizes,3,0);
@@ -507,20 +599,21 @@
      /* term depending on      (i,j,k)          */
      ijkinsert[0]=ix; ijkinsert[1]=iy; ijkinsert[2]=iz;
      icol[el] = psb_c_l_ijk2idx(ijkinsert,sizes,3,0);
+     if(glob_row == 4) fprintf(stderr, "I am %d glob_row %ld (%d,%d,%d) --> %ld \n",iam,glob_row,ijkinsert[0],ijkinsert[1],ijkinsert[2],icol[el]);
      el=el+1;
-     /*  term depending on     (i+1,j,k)        */
-     if (iz != idim-1) {
+     /*  term depending on     (i,j,k+1)        */
+     if (iz != kdim-1) {
        ijkinsert[0]=ix; ijkinsert[1]=iy; ijkinsert[2]=iz+1;
        icol[el] = psb_c_l_ijk2idx(ijkinsert,sizes,3,0);
        el=el+1;
      }
      /*  term depending on     (i,j+1,k)        */
-     if (iy != idim-1){
-       ijkinsert[0]=ix-1; ijkinsert[1]=iy+1; ijkinsert[2]=iz;
+     if (iy != jdim-1){
+       ijkinsert[0]=ix; ijkinsert[1]=iy+1; ijkinsert[2]=iz;
        icol[el] = psb_c_l_ijk2idx(ijkinsert,sizes,3,0);
        el=el+1;
      }
-     /* term depending on      (i,j,k+1)        */
+     /* term depending on      (i+1,j,k)        */
      if (ix != idim-1){
        ijkinsert[0]=ix+1; ijkinsert[1]=iy; ijkinsert[2]=iz;
        icol[el] = psb_c_l_ijk2idx(ijkinsert,sizes,3,0);
@@ -553,8 +646,8 @@
     options.istop  = istop;
     if (iam == 0){
       fprintf(stdout,"Solver options:\n");
-      fprintf(stdout,"%s solver maxit = %d, irst = %d, itrace = %d, istop = %d\n",
-         methd,itmax,irst,itrace,istop);
+      fprintf(stdout,"%s solver maxit = %d, irst = %d, itrace = %d, istop = %d, tol = %e\n",
+         methd,itmax,irst,itrace,istop,tol);
     }
     /*-------------------------------------------------------------------------
      * Create PSBLAS/AMG4PSBLAS linear solver
@@ -871,7 +964,7 @@
    if (check_flag(&info, "KINSol", 1, iam)){
       if(iam == 0){
          /* Write the performance on log file */
-         sprintf(outfilename,"performancerunon_%dprocess_%ddofs.csv", np, idim);
+         sprintf(outfilename,"performancerunon_%dprocess_%dx%dx%d_dofs.csv", np,idim,jdim,kdim);
          outfileforperformance = fopen(outfilename,"w+");
          fprintf(outfileforperformance,"Step,Njac,Nfev,NNLin,NLin,GTime\n");
          fprintf(outfileforperformance, "%d,%d,%d,%d,%d,%lf \n",
@@ -893,6 +986,7 @@
       N_VDestroy(sc);
       N_VDestroy(su);
       SUNMatDestroy(J);
+      SUNMatDestroy(user_data.B);
       SUNLinSolFree(LS);
       free(cdh);
       psb_c_abort(*cctxt);
@@ -967,7 +1061,7 @@
      if (check_flag(&info, "KINSol", 1, iam)){
         if(iam == 0){
         /* Write the performance on log file */
-        sprintf(outfilename,"performancerunon_%dprocess_%ddofs.csv", np, idim);
+        sprintf(outfilename,"performancerunon_%dprocess_%dx%dx%d_dofs.csv", np,idim,jdim,kdim);
         outfileforperformance = fopen(outfilename,"w+");
         fprintf(outfileforperformance,"Step,Njac,Nfev,NNLin,NLin,GTime\n");
         for (int j=0; j < i; j++){
@@ -991,6 +1085,7 @@
        N_VDestroy(sc);
        N_VDestroy(su);
        SUNMatDestroy(J);
+       SUNMatDestroy(user_data.B);
        SUNLinSolFree(LS);
        free(cdh);
        psb_c_abort(*cctxt);
@@ -1005,7 +1100,7 @@
    psb_c_barrier(*cctxt);
    if(iam == 0){
       /* Write the performance on log file */
-      sprintf(outfilename,"performancerunon_%dprocess_%ddofs.csv", np, idim);
+      sprintf(outfilename,"performancerunon_%dprocess_%dx%dx%d_dofs.csv", np,idim,jdim,kdim);
       outfileforperformance = fopen(outfilename,"w+");
       fprintf(outfileforperformance,"Step,Njac,Nfev,NNLin,NLin,GTime\n");
       for (i=0; i < NtToDo; i++){
@@ -1032,6 +1127,7 @@
    N_VDestroy(sc);
    N_VDestroy(su);
    SUNMatDestroy(J);
+   SUNMatDestroy(user_data.B);
    SUNLinSolFree(LS);
    free(cdh);
    psb_c_barrier(*cctxt);
@@ -1051,11 +1147,13 @@ static int funcprpr(N_Vector u, N_Vector fval, void *user_data)
    Newton method.                                                             */
    struct user_data_for_f *input = user_data;
    N_Vector uold;
-   psb_i_t iam, np, ictxt, idim, nl;
+   psb_i_t iam, np, ictxt, idim, jdim, kdim, nl;
    psb_i_t i, k, info;
-   psb_l_t glob_row, irow[1];
-   double x, y, z, t, deltah, sqdeltah, deltah2;
-   double val[1],entries[8];
+   psb_l_t glob_row, irow[2];
+   double x, y, z, t, deltahx, sqdeltahx, deltahx2;
+   double deltahy, sqdeltahy, deltahy2;
+   double deltahz, sqdeltahz, deltahz2;
+   double val[2],entries[8];
    psb_i_t ix, iy, iz, ijk[3],sizes[3];
    FILE *outfile1,*outfile2;
    char infilename[20],outfilename[20];
@@ -1084,13 +1182,19 @@ static int funcprpr(N_Vector u, N_Vector fval, void *user_data)
    info = 0;
 
    idim = input->idim;
+   jdim = input->jdim;
+   kdim = input->kdim;
    nl = input->nl;
 
    // Who am I?
    psb_c_info(*(NV_CCTXT_P(u)),&iam,&np);
    psb_c_set_index_base(0);
    info = psb_c_dhalo(NV_PVEC_P(u),NV_DESCRIPTOR_P(u));
+   if( info != 0)
+      fprintf(stderr, "Halo Error (u) on process %d info: %d\n",iam,info);
    info = psb_c_dhalo(NV_PVEC_P(uold),NV_DESCRIPTOR_P(uold));
+   if( info != 0)
+      fprintf(stderr, "Halo Error (uold) on process %d info: %d\n",iam,info);
 
    if ( input->verbosity > 1 ){
       sprintf(infilename,"fin%d_np%d.dat",input->functioncount,iam);
@@ -1099,10 +1203,16 @@ static int funcprpr(N_Vector u, N_Vector fval, void *user_data)
       fclose(outfile1);
    }
 
-   deltah = (double) L/(idim+1.0);
-   sqdeltah = deltah*deltah;
-   deltah2  = 2.0* deltah;
-   sizes[0] = idim; sizes[1] = idim; sizes[2] = idim;
+   deltahx = (double) xmax/(idim+1.0);
+   deltahy = (double) ymax/(jdim+1.0);
+   deltahz = (double) L/(kdim+1.0);
+   sqdeltahx = deltahx*deltahx;
+   sqdeltahy = deltahy*deltahy;
+   sqdeltahz = deltahz*deltahz;
+   deltahx2  = 2.0* deltahx;
+   deltahy2  = 2.0* deltahy;
+   deltahz2  = 2.0* deltahz;
+   sizes[0] = idim; sizes[1] = jdim; sizes[2] = kdim;
 
    if (iam == 0 && input->verbosity > 0){
      fprintf(stdout, "----------------------------------------------------------------------\n");
@@ -1118,7 +1228,9 @@ static int funcprpr(N_Vector u, N_Vector fval, void *user_data)
      alpha,beta,a,gamma);
      fprintf(stdout, "Initial value of the pressure head is %lf cm\n",pr);
      fprintf(stdout, "Solving in a box [0,%lf]x[0,%lf]x[0,%lf]\n",xmax,ymax,L);
-     fprintf(stdout, "dx = %1.4f dt = %1.4f\n",deltah,dt);
+     fprintf(stdout, "With %d x %d x %d dofs\n",idim,jdim,kdim);
+     fprintf(stdout, "dx = %1.4f dy = %1.4f dz = %1.4f dt = %1.4f\n",
+                        deltahx,deltahy,deltahz,dt);
      fprintf(stdout, "----------------------------------------------------------------------\n");
      fflush(stdout);
    }
@@ -1130,7 +1242,7 @@ static int funcprpr(N_Vector u, N_Vector fval, void *user_data)
      // We compute the local indexes of the elements on the stencil
      psb_c_l_idx2ijk(ijk,glob_row,sizes,3,0);
      ix = ijk[0]; iy = ijk[1]; iz = ijk[2];
-     x = (ix+1)*deltah; y = (iy+1)*deltah; z = (iz+1)*deltah; t = (input->timestep)*dt;
+     x = (ix+1)*deltahx; y = (iy+1)*deltahy; z = (iz+1)*deltahz; t = (input->timestep)*dt;
      // We compute the result of Φ(p) by first going back to the (i,j,k)
      // indexing and substiting the value of p[i,j,k] on the boundary with the
      // correct values, otherwise we use the entries stored in u, together with
@@ -1141,6 +1253,7 @@ static int funcprpr(N_Vector u, N_Vector fval, void *user_data)
      // the memory.
      entries[0] = psb_c_dgetelem(NV_PVEC_P(uold),glob_row,
                                  NV_DESCRIPTOR_P(uold)); // u^(l-1)_{i,j,k}
+     if(glob_row == 4) fprintf(stderr, "Call on y :\n" );
      entries[1] = psb_c_dgetelem(NV_PVEC_P(u),glob_row,
                                   NV_DESCRIPTOR_P(u)); // u^(l)_{i,j,k}
      if (ix == 0) {        // Cannot do i-1
@@ -1167,7 +1280,7 @@ static int funcprpr(N_Vector u, N_Vector fval, void *user_data)
                                    psb_c_l_ijk2idx(ijk,sizes,3,0),
                                    NV_DESCRIPTOR_P(u));  // u^(l)_{i,j-1,k}
      }
-     if (iy == idim -1){
+     if (iy == jdim -1){
        entries[5] = boundary(x,L,z,t,user_data);
      }else{
        ijk[0] = ix; ijk[1] = iy+1; ijk[2] = iz;
@@ -1183,7 +1296,7 @@ static int funcprpr(N_Vector u, N_Vector fval, void *user_data)
                                    psb_c_l_ijk2idx(ijk,sizes,3,0),
                                    NV_DESCRIPTOR_P(u));  // u^(l)_{i,j,k-1}
      }
-     if (iz == idim -1){ // Cannot do k+1
+     if (iz == kdim -1){ // Cannot do k+1
        entries[7] = boundary(x,y,L,t,user_data);
      }else{
        ijk[0] = ix; ijk[1] = iy; ijk[2] = iz+1;
@@ -1196,40 +1309,26 @@ static int funcprpr(N_Vector u, N_Vector fval, void *user_data)
       val[0] = ((rho*phi)/dt)*(Sfun(entries[1],alpha,beta,thetas,thetar)
       - Sfun(entries[0],alpha,beta,thetas,thetar)) + (
       - upstream(entries[3],entries[1],user_data)*(entries[3]-entries[1])
-      + upstream(entries[1],entries[2],user_data)*(entries[1]-entries[2])
-      - upstream(entries[5],entries[1],user_data)*(entries[5]-entries[1])
-      + upstream(entries[1],entries[4],user_data)*(entries[1]-entries[4])
-      - upstream(entries[7],entries[1],user_data)*(entries[7]-entries[1])
-      + upstream(entries[1],entries[6],user_data)*(entries[1]-entries[6]))/sqdeltah
-      + (Kfun(entries[6],a,gamma,Ks) - Kfun(entries[7],a,gamma,Ks))/deltah2;
-
-      // DEBUG:
-      // if (glob_row == 401){
-      //    //double up1, up2;
-      //    //up1 = upstream(entries[7],entries[1],user_data);
-      //    //up2 = upstream(entries[1],entries[6],user_data);
-      //    psb_c_l_idx2ijk(ijk,glob_row,sizes,3,0);
-      //    ix = ijk[0]+1; iy = ijk[1]+1; iz = ijk[2]+1;
-      //    fprintf(stdout,"F(%d,%d,%d) = %1.16f\n",ix,iy,iz,val[0]);
-      //    fprintf(stdout,"p(%d,%d,%d) = %1.16f\n",ix,iy,iz,entries[1]);
-      //    fprintf(stdout,"p(%d,%d,%d) = %1.16f\n",ix+1,iy,iz,entries[3]);
-      //    fprintf(stdout,"p(%d,%d,%d) = %1.16f\n",ix-1,iy,iz,entries[2]);
-      //    fprintf(stdout,"p(%d,%d,%d) = %1.16f\n",ix,iy-1,iz,entries[4]);
-      //    fprintf(stdout,"p(%d,%d,%d) = %1.16f\n",ix,iy+1,iz,entries[5]);
-      //    fprintf(stdout,"p(%d,%d,%d) = %1.16f\n",ix,iy,iz+1,entries[7]);
-      //    fprintf(stdout,"p(%d,%d,%d) = %1.16f\n",ix,iy,iz-1,entries[6]);
-      //    //fprintf(stdout,"Kav = %1.16f\n",up1);
-      //    //fprintf(stdout,"Kav = %1.16f\n",up2);
-      // }
+      + upstream(entries[1],entries[2],user_data)*(entries[1]-entries[2]))/sqdeltahx +
+      (- upstream(entries[5],entries[1],user_data)*(entries[5]-entries[1])
+      + upstream(entries[1],entries[4],user_data)*(entries[1]-entries[4]))/sqdeltahy +
+      (- upstream(entries[7],entries[1],user_data)*(entries[7]-entries[1])
+      + upstream(entries[1],entries[6],user_data)*(entries[1]-entries[6]))/sqdeltahz
+      + (Kfun(entries[6],a,gamma,Ks) - Kfun(entries[7],a,gamma,Ks))/deltahz2;
 
      irow[0] = glob_row;
-     psb_c_dgeins(1,irow,val,NV_PVEC_P(fval),NV_DESCRIPTOR_P(fval));
+     if(psb_c_dgeins(1,irow,val,NV_PVEC_P(fval),NV_DESCRIPTOR_P(fval))!=0)
+      fprintf(stderr,"Error from geins on process %d info is %d\n",iam,info);
    }
 
+   psb_c_check_error(*(NV_CCTXT_P(u)));
+   fprintf(stderr, "Process %d start assembly!\n",iam);
    // We assemble the vector at the end
-   N_VAsb_PSBLAS(fval);
+   if(psb_c_dgeasb(NV_PVEC_P(fval),NV_DESCRIPTOR_P(fval))!=0)
+      fprintf(stderr,"Process %d Completed Vector Assembly with info = %d!\n",iam,info);
 
    if ( input->verbosity > 1 ){
+      printf("I am %d and I'm writing out the vector!\n",iam);
       sprintf(outfilename,"fout%d_np%d.dat",input->functioncount,iam);
       outfile2 = fopen(outfilename,"w+");
       N_VPrintFile_PSBLAS(fval,outfile2);
@@ -1247,10 +1346,13 @@ static int jac(N_Vector yvec, N_Vector fvec, SUNMatrix J,
   /* This function returns the evaluation of the Jacobian of the system upon
   request of the Newton method.                                               */
   struct user_data_for_f *input = user_data;
-  psb_i_t iam, np, ictxt, idim, nl;
+  psb_i_t iam, np, ictxt, idim, jdim, kdim, nl;
   psb_i_t i, k, info, el;
   psb_l_t glob_row, irow[10*NBMAX], icol[10*NBMAX];
-  double x, y, z, t, deltah, sqdeltah, deltah2;
+  double x, y, z, t, deltahx, sqdeltahx, deltahx2;
+  double deltahy, sqdeltahy, deltahy2;
+  double deltahz, sqdeltahz, deltahz2;
+
   double val[10*NBMAX],entries[8];
   psb_i_t ix, iy, iz, ijk[3],ijkinsert[3],sizes[3];
 
@@ -1280,12 +1382,16 @@ static int jac(N_Vector yvec, N_Vector fvec, SUNMatrix J,
   info = 0;
 
   idim = input->idim;
+  jdim = input->jdim;
+  kdim = input->kdim;
   nl = input->nl;
 
   // Who am I?
   psb_c_info(*(NV_CCTXT_P(yvec)),&iam,&np);
   psb_c_set_index_base(0);
   info = psb_c_dhalo(NV_PVEC_P(yvec),NV_DESCRIPTOR_P(yvec));
+  if( info != 0)
+     fprintf(stderr, "Halo Error (yvec) on process %d info: %d\n",iam,info);
 
   if (iam == 0 && input->verbosity > 0){
     fprintf(stdout, "----------------------------------------------------------------------\n");
@@ -1311,10 +1417,16 @@ static int jac(N_Vector yvec, N_Vector fvec, SUNMatrix J,
    ----------------------------------------------------------------------------*/
   SUNMatZero_PSBLAS(J);
 
-  deltah = (double) L/(idim+1);
-  sqdeltah = deltah*deltah;
-  deltah2  = 2.0* deltah;
-  sizes[0] = idim; sizes[1] = idim; sizes[2] = idim;
+  deltahx = (double) xmax/(idim+1.0);
+  deltahy = (double) ymax/(jdim+1.0);
+  deltahz = (double) L/(kdim+1.0);
+  sqdeltahx = deltahx*deltahx;
+  sqdeltahy = deltahy*deltahy;
+  sqdeltahz = deltahz*deltahz;
+  deltahx2  = 2.0* deltahx;
+  deltahy2  = 2.0* deltahy;
+  deltahz2  = 2.0* deltahz;
+  sizes[0] = idim; sizes[1] = jdim; sizes[2] = kdim;
   t = (input->timestep)*dt;
 
   for (i=0; i<nl;  i++) {
@@ -1322,7 +1434,7 @@ static int jac(N_Vector yvec, N_Vector fvec, SUNMatrix J,
     // We compute the local indexes of the elements on the stencil
     psb_c_l_idx2ijk(ijk,glob_row,sizes,3,0);
     ix = ijk[0]; iy = ijk[1]; iz = ijk[2];
-    x = (ix+1)*deltah; y = (iy+1)*deltah; z = (iz+1)*deltah;
+    x = (ix+1)*deltahx; y = (iy+1)*deltahy; z = (iz+1)*deltahz;
     el = 0;
 
     /* To compute the expression of the Jacobian for Φ we first need to access
@@ -1360,7 +1472,7 @@ static int jac(N_Vector yvec, N_Vector fvec, SUNMatrix J,
                                   psb_c_l_ijk2idx(ijk,sizes,3,0),
                                   NV_DESCRIPTOR_P(yvec));  // u^(l)_{i,j-1,k}
     }
-    if (iy == idim -1){
+    if (iy == jdim -1){
       entries[5] = boundary(x,L,z,t,user_data);
       //  fprintf(stderr, "b(%1.2f,%1.2f,%1.2f) = %1.2f\n",x,L,z,entries[5]);
     }else{
@@ -1379,7 +1491,7 @@ static int jac(N_Vector yvec, N_Vector fvec, SUNMatrix J,
                                   psb_c_l_ijk2idx(ijk,sizes,3,0),
                                   NV_DESCRIPTOR_P(yvec));  // u^(l)_{i,j,k-1}
     }
-    if (iz == idim -1){ // Cannot do k+1
+    if (iz == kdim -1){ // Cannot do k+1
       entries[7] = boundary(x,y,L,t,user_data);
       // fprintf(stderr, "b(%1.2f,%1.2f,%1.2f) = %1.2f\n",x,y,L,entries[7]);
       // fprintf(stderr, "K(%f,%f,%f,%f) = %f \n",entries[7],a,gamma,Ks,Kfun(entries[7],a,gamma,Ks));
@@ -1394,7 +1506,7 @@ static int jac(N_Vector yvec, N_Vector fvec, SUNMatrix J,
     of the current row of the Jacobian we can loop through the different nonzero
     elements and compute the relative values.                                 */
     /*  term depending on   (i-1,j,k)        */
-    val[el] = 1/sqdeltah*(
+    val[el] = 1/sqdeltahx*(
       entries[1]*Kfunprime(entries[2],a,gamma,Ks)*chi(entries[1],entries[2])
       -entries[2]*Kfunprime(entries[2],a,gamma,Ks)*chi(entries[1],entries[2])
       -1*upstream(entries[2],entries[1],user_data)
@@ -1406,7 +1518,7 @@ static int jac(N_Vector yvec, N_Vector fvec, SUNMatrix J,
     }
     //fprintf(stdout, "val = %e\n",val[el]);
     /*  term depending on     (i,j-1,k)        */
-    val[el] = 1/sqdeltah*(
+    val[el] = 1/sqdeltahy*(
       entries[1]*Kfunprime(entries[4],a,gamma,Ks)*chi(entries[4],entries[1])
       -entries[2]*Kfunprime(entries[4],a,gamma,Ks)*chi(entries[4],entries[1])
       -upstream(entries[1],entries[4],user_data)
@@ -1418,11 +1530,11 @@ static int jac(N_Vector yvec, N_Vector fvec, SUNMatrix J,
     }
     //fprintf(stdout, "val = %e\n",val[el]);
     /* term depending on      (i,j,k-1)        */
-    val[el] = 1/sqdeltah*(
+    val[el] = 1/sqdeltahz*(
       entries[1]*Kfunprime(entries[6],a,gamma,Ks)*chi(entries[1],entries[6])
       -entries[2]*Kfunprime(entries[6],a,gamma,Ks)*chi(entries[1],entries[6])
       -1*upstream(entries[6],entries[1],user_data)
-    ) + Kfunprime(entries[6],a,gamma,Ks)/deltah2;
+      ) + Kfunprime(entries[6],a,gamma,Ks)/deltahz2;
     if (iz != 0){
       ijkinsert[0]=ix; ijkinsert[1]=iy; ijkinsert[2]=iz-1;
       icol[el] = psb_c_l_ijk2idx(ijkinsert,sizes,3,0);
@@ -1431,31 +1543,32 @@ static int jac(N_Vector yvec, N_Vector fvec, SUNMatrix J,
     //fprintf(stdout, "val = %e\n",val[el]);
     /* term depending on      (i,j,k)          */
     val[el] = ((rho*phi)/dt)*Sfunprime(entries[1],alpha,beta,thetas,thetar)
-      -(entries[2]*Kfunprime(entries[1],a,gamma,Ks)*chi(entries[2],entries[1]))/sqdeltah
-      -(entries[4]*Kfunprime(entries[1],a,gamma,Ks)*chi(entries[4],entries[1]))/sqdeltah
-      -(entries[6]*Kfunprime(entries[1],a,gamma,Ks)*chi(entries[6],entries[1]))/sqdeltah
-      -(entries[3]*Kfunprime(entries[1],a,gamma,Ks)*(1.0-chi(entries[1],entries[3])))/sqdeltah
-      -(entries[5]*Kfunprime(entries[1],a,gamma,Ks)*(1.0-chi(entries[1],entries[5])))/sqdeltah
-      -(entries[7]*Kfunprime(entries[1],a,gamma,Ks)*(1.0-chi(entries[1],entries[7])))/sqdeltah
-      +(entries[1]*Kfunprime(entries[1],a,gamma,Ks)/sqdeltah)*(
-        (1.0-chi(entries[1],entries[3]))+chi(entries[2],entries[1])
-        +(1.0-chi(entries[1],entries[5]))+chi(entries[4],entries[1])
-        +(1.0-chi(entries[1],entries[7]))+chi(entries[6],entries[1])
+      -(entries[2]*Kfunprime(entries[1],a,gamma,Ks)*chi(entries[2],entries[1]))/sqdeltahx
+      -(entries[4]*Kfunprime(entries[1],a,gamma,Ks)*chi(entries[4],entries[1]))/sqdeltahy
+      -(entries[6]*Kfunprime(entries[1],a,gamma,Ks)*chi(entries[6],entries[1]))/sqdeltahz
+      -(entries[3]*Kfunprime(entries[1],a,gamma,Ks)*(1.0-chi(entries[1],entries[3])))/sqdeltahx
+      -(entries[5]*Kfunprime(entries[1],a,gamma,Ks)*(1.0-chi(entries[1],entries[5])))/sqdeltahy
+      -(entries[7]*Kfunprime(entries[1],a,gamma,Ks)*(1.0-chi(entries[1],entries[7])))/sqdeltahz
+      +(entries[1]*Kfunprime(entries[1],a,gamma,Ks))*(
+         ((1.0-chi(entries[1],entries[3]))+chi(entries[2],entries[1]))/sqdeltahx
+        +((1.0-chi(entries[1],entries[5]))+chi(entries[4],entries[1]))/sqdeltahy
+        +((1.0-chi(entries[1],entries[7]))+chi(entries[6],entries[1]))/sqdeltahz
       )
-      +(1/sqdeltah)*(
+      +(1/sqdeltahx)*(
         upstream(entries[3],entries[1],user_data)
-        +upstream(entries[2],entries[1],user_data)
+        +upstream(entries[2],entries[1],user_data))
+      +(1/sqdeltahy)*(
         +upstream(entries[1],entries[5],user_data)
-        +upstream(entries[6],entries[1],user_data)
+        +upstream(entries[6],entries[1],user_data))
+      +(1/sqdeltahz)*(
         +upstream(entries[1],entries[7],user_data)
-        +upstream(entries[6],entries[1],user_data)
-      );
+        +upstream(entries[6],entries[1],user_data));
     ijkinsert[0]=ix; ijkinsert[1]=iy; ijkinsert[2]=iz;
     icol[el] = psb_c_l_ijk2idx(ijkinsert,sizes,3,0);
     el=el+1;
     //fprintf(stdout, "val = %e\n",val[el]);
     /*  term depending on     (i+1,j,k)        */
-    val[el] = 1/sqdeltah*(
+    val[el] = 1/sqdeltahx*(
       entries[1]*Kfunprime(entries[3],a,gamma,Ks)*chi(entries[1],entries[3])
       - entries[3]*Kfunprime(entries[3],a,gamma,Ks)*chi(entries[1],entries[3])
       - upstream(entries[1],entries[3],user_data)
@@ -1467,7 +1580,7 @@ static int jac(N_Vector yvec, N_Vector fvec, SUNMatrix J,
     }
     //fprintf(stdout, "val = %e\n",val[el]);
     /*  term depending on     (i,j+1,k)        */
-    val[el] = 1/sqdeltah*(
+    val[el] = 1/sqdeltahy*(
       entries[1]*Kfunprime(entries[5],a,gamma,Ks)*chi(entries[5],entries[1])
       - entries[5]*Kfunprime(entries[5],a,gamma,Ks)*chi(entries[5],entries[1])
       - upstream(entries[1],entries[5],user_data)
@@ -1478,11 +1591,11 @@ static int jac(N_Vector yvec, N_Vector fvec, SUNMatrix J,
       el=el+1;
     }
     /* term depending on      (i,j,k+1)        */
-    val[el] = 1/sqdeltah*(
+    val[el] = 1/sqdeltahz*(
       entries[1]*Kfunprime(entries[7],a,gamma,Ks)*chi(entries[7],entries[1])
       - entries[7]*Kfunprime(entries[7],a,gamma,Ks)*chi(entries[7],entries[1])
       - upstream(entries[1],entries[7],user_data)
-    ) - Kfunprime(entries[7],a,gamma,Ks)/deltah2;
+      ) - Kfunprime(entries[7],a,gamma,Ks)/deltahz2;
     if (iz != idim-1){
       ijkinsert[0]=ix; ijkinsert[1]=iy; ijkinsert[2]=iz+1;
       icol[el] = psb_c_l_ijk2idx(ijkinsert,sizes,3,0);

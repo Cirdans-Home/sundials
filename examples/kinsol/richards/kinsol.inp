@@ -1,5 +1,7 @@
 %%%%%%%%%%%  Problem Parameters %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-30                    ! Domain size (actual system is this**3)
+50                    ! x Domain size (actual system is this times ...)
+50                    ! y Domain size (... this times ...)
+40                    ! z Domain size (... this)
 1.0                   ! Size x of the box
 1.0                   ! Size y of the box
 1.0                   ! Size z of the box
@@ -13,17 +15,18 @@
 1.0                   ! ρ  : Water density
 1.0                   ! ϕ  : Porosity of the medium
 -20.0                 ! pr : Value of preassure head at the boundary
-1                     ! Tmax : Maximum time of simulation
+10                    ! Tmax : Maximum time of simulation
+2                     ! Number of dimension of the processors grid: 2 or 3
 %%%%%%%%%%%  Newton Parameters %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-500                   ! Nt : Number of time steps (dt = Tmax/(Nt + 1))
-20                    ! Number of performed time-steps (<= Nt)
-20                    ! Max. number of nonlinear iterations
+10                    ! Nt : Number of time steps (dt = Tmax/(Nt + 1))
+10                    ! Number of performed time-steps (<= Nt)
+200                   ! Max. number of nonlinear iterations
 1e-5                  ! Tolerance for the Newton Method (fnormtol)
 0.0                   ! Stopping tolerance on the min. scaled steplength 0.0 def (scsteptol)
 LINESEARCH            ! NONE : Global Newton Method ; LINESEARCH : Armijo-Goldstein linesearch
 ETACONSTANT           ! How do we set the tolerance of the Krylov method? ETACHOICE1, ETACHOICE2, ETACONSTANT
 0                     ! Verbosity Level: 0 silent, 1 infos, 2 everything and dump
-3                     ! KINSetPrintLevel
+1                     ! KINSetPrintLevel
 %%%%%%%%%%%  PSBLAS Parameters %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 CSR                   ! A Storage format CSR COO JAD
 GMRES                 ! Iterative method BICGSTAB CGS  BICG BICGSTABL RGMRES
@@ -32,11 +35,11 @@ GMRES                 ! Iterative method BICGSTAB CGS  BICG BICGSTABL RGMRES
 01                    ! ITRACE
 10                    ! IRST    restart for RGMRES  and BiCGSTABL
 1e-9                  ! Tolerance for the Krylov Method (eta parameter)
-AS                    ! Preconditioner NONE  DIAG  BJAC ML AS
+ML                    ! Preconditioner NONE  DIAG  BJAC ML AS
 %%%%%%%%%%%  First smoother (for all levels but coarsest) %%%%%%%%%%%%%%%%%%%%%%
-AS                    ! Smoother type JACOBI FBGS GS BWGS BJAC AS. For 1-level, repeats previous.
+FBGS                  ! Smoother type JACOBI FBGS GS BWGS BJAC AS. For 1-level, repeats previous.
 1                     ! Number of sweeps for smoother
-1                     ! Number of overlap layers for AS preconditioner
+0                     ! Number of overlap layers for AS preconditioner
 HALO                  ! AS restriction operator: NONE HALO
 SUM                   ! AS prolongation operator: NONE SUM AVG
 INVK                  ! Subdomain solver for BJAC/AS: JACOBI GS BGS ILU ILUT MILU MUMPS SLU UMF
@@ -66,8 +69,6 @@ SOC1                        ! Type of aggregation: SOC1 (Vanek&B&M), SOC2(Gratto
 NATURAL                     ! Ordering of aggregation NATURAL DEGREE
 FILTER                      ! Filtering of matrix:  FILTER NOFILTER
 -4.0                        ! Coarsening ratio, if < 0 use library default1
--2                          ! Number of thresholds in vector, next line ignored if <= 0
-0.05 0.025                  ! Thresholds
 -0.0100d0                   ! Smoothed aggregation threshold, ignored if < 0
 0                           ! BCM method: 0 PREIS, 1 MC64, 2 SPRAL (auction)
 3                           ! BCM Pairing sweeps
@@ -84,8 +85,8 @@ DIST                        ! Coarsest-level matrix distribution: DIST  REPL
 30                          ! maxit for RKR
 1.d-4                       ! eps for RKR
 5                           ! itrace for RKR
-T                           ! Check the BJAC residual
-T                           ! Print the BJAC residual
+F                           ! Check the BJAC residual
+F                           ! Print the BJAC residual
 5                           ! ITRACE for residual check
 5                           ! ITRACE for residual print
 1.d-4                       ! Tolerance for exit from BJAC
