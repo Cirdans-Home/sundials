@@ -489,17 +489,24 @@
       // Now let's split the 3D cube in hexahedra
       info = psb_c_dist1didx(idim,npx,0,npx+1,bndx);
       mynx = bndx[iamx+1] - bndx[iamx];
-      fprintf(stderr, "Process %d mynx = %d - %d = %d\n",iam,bndx[iamx+1],bndx[iamx],mynx);
+      if( verbositylevel > 0)
+         fprintf(stderr, "Process %d mynx = %d - %d = %d\n",
+                  iam,bndx[iamx+1],bndx[iamx],mynx);
       info = psb_c_dist1didx(jdim,npy,0,npy+1,bndy);
       myny = bndy[iamy+1] - bndy[iamy];
-      fprintf(stderr, "Process %d myny = %d - %d = %d\n",iam,bndy[iamy+1],bndy[iamy],myny);
+      if( verbositylevel > 0)
+         fprintf(stderr, "Process %d myny = %d - %d = %d\n",
+                  iam,bndy[iamy+1],bndy[iamy],myny);
       info = psb_c_dist1didx(kdim,npz,0,npz+1,bndz);
       mynz = bndz[iamz+1] - bndz[iamz];
-      fprintf(stderr, "Process %d myny = %d - %d = %d\n",iam,bndz[iamz+1],bndz[iamz],mynz);
+      if( verbositylevel > 0)
+         fprintf(stderr, "Process %d myny = %d - %d = %d\n",
+                  iam,bndz[iamz+1],bndz[iamz],mynz);
 
       // How many indices do I own?
       nl = mynx*myny*mynz;
-      fprintf(stderr, "Process %d owns %ld indexes (%d,%d,%d) \n",
+      if( verbositylevel > 0)
+         fprintf(stderr, "Process %d owns %ld indexes (%d,%d,%d) \n",
          iam, nl, mynx, myny, mynz);
       // We populate the vector containing the local indexes we know of
       vl = (psb_l_t *) malloc((nl+1)*sizeof(psb_l_t));
@@ -1253,7 +1260,6 @@ static int funcprpr(N_Vector u, N_Vector fval, void *user_data)
      // the memory.
      entries[0] = psb_c_dgetelem(NV_PVEC_P(uold),glob_row,
                                  NV_DESCRIPTOR_P(uold)); // u^(l-1)_{i,j,k}
-     if(glob_row == 4) fprintf(stderr, "Call on y :\n" );
      entries[1] = psb_c_dgetelem(NV_PVEC_P(u),glob_row,
                                   NV_DESCRIPTOR_P(u)); // u^(l)_{i,j,k}
      if (ix == 0) {        // Cannot do i-1
@@ -1322,7 +1328,6 @@ static int funcprpr(N_Vector u, N_Vector fval, void *user_data)
    }
 
    psb_c_check_error(*(NV_CCTXT_P(u)));
-   fprintf(stderr, "Process %d start assembly!\n",iam);
    // We assemble the vector at the end
    if(psb_c_dgeasb(NV_PVEC_P(fval),NV_DESCRIPTOR_P(fval))!=0)
       fprintf(stderr,"Process %d Completed Vector Assembly with info = %d!\n",iam,info);
@@ -1447,7 +1452,6 @@ static int jac(N_Vector yvec, N_Vector fvec, SUNMatrix J,
                                  NV_DESCRIPTOR_P(yvec)); // u^(l)_{i,j,k}
     if (ix == 0) {        // Cannot do i-1
       entries[2] = boundary(0.0,y,z,t,user_data); // u^(l)_{i-1,j,k}
-      //  fprintf(stderr, "b(%1.2f,%1.2f,%1.2f) = %1.2f\n",0.0,y,z,entries[2]);
     }else{
       ijk[0] = ix - 1; ijk[1] = iy; ijk[2] = iz;
       entries[2] = psb_c_dgetelem(NV_PVEC_P(yvec),
@@ -1456,7 +1460,6 @@ static int jac(N_Vector yvec, N_Vector fvec, SUNMatrix J,
     }
     if (ix == idim -1){
       entries[3] = boundary(L,y,z,t,user_data);
-      //  fprintf(stderr, "b(%1.2f,%1.2f,%1.2f) = %1.2f\n",L,y,z,entries[3]);
     }else{
       ijk[0] = ix+1; ijk[1] = iy; ijk[2] = iz;
       entries[3] = psb_c_dgetelem(NV_PVEC_P(yvec),
@@ -1465,7 +1468,6 @@ static int jac(N_Vector yvec, N_Vector fvec, SUNMatrix J,
     }
     if (iy == 0){       // Cannot do j-1
       entries[4] = boundary(x,0.0,z,t,user_data); // u^(l)_{i+1,j,k}
-      //  fprintf(stderr, "b(%1.2f,%1.2f,%1.2f) = %1.2f\n",x,0.0,z,entries[4]);
     }else{
       ijk[0] = ix; ijk[1] = iy-1; ijk[2] = iz;
       entries[4] = psb_c_dgetelem(NV_PVEC_P(yvec),
@@ -1474,7 +1476,6 @@ static int jac(N_Vector yvec, N_Vector fvec, SUNMatrix J,
     }
     if (iy == jdim -1){
       entries[5] = boundary(x,L,z,t,user_data);
-      //  fprintf(stderr, "b(%1.2f,%1.2f,%1.2f) = %1.2f\n",x,L,z,entries[5]);
     }else{
       ijk[0] = ix; ijk[1] = iy+1; ijk[2] = iz;
       entries[5] = psb_c_dgetelem(NV_PVEC_P(yvec),
@@ -1483,8 +1484,6 @@ static int jac(N_Vector yvec, N_Vector fvec, SUNMatrix J,
     }
     if (iz == 0){       // Cannot do k-1
       entries[6] = boundary(x,y,0.0,t,user_data);
-      //  fprintf(stderr, "b(%1.2f,%1.2f,%1.2f) = %1.2f\n",x,y,0.0,entries[6]);
-      // fprintf(stderr, "K(%f,%f,%f,%f) = %f \n",entries[6],a,gamma,Ks,Kfun(entries[6],a,gamma,Ks));
     }else{
       ijk[0] = ix; ijk[1] = iy; ijk[2] = iz-1;
       entries[6] = psb_c_dgetelem(NV_PVEC_P(yvec),
@@ -1493,8 +1492,6 @@ static int jac(N_Vector yvec, N_Vector fvec, SUNMatrix J,
     }
     if (iz == kdim -1){ // Cannot do k+1
       entries[7] = boundary(x,y,L,t,user_data);
-      // fprintf(stderr, "b(%1.2f,%1.2f,%1.2f) = %1.2f\n",x,y,L,entries[7]);
-      // fprintf(stderr, "K(%f,%f,%f,%f) = %f \n",entries[7],a,gamma,Ks,Kfun(entries[7],a,gamma,Ks));
     }else{
       ijk[0] = ix; ijk[1] = iy; ijk[2] = iz+1;
       entries[7] = psb_c_dgetelem(NV_PVEC_P(yvec),
@@ -1516,7 +1513,6 @@ static int jac(N_Vector yvec, N_Vector fvec, SUNMatrix J,
       icol[el] = psb_c_l_ijk2idx(ijkinsert,sizes,3,0);
       el=el+1;
     }
-    //fprintf(stdout, "val = %e\n",val[el]);
     /*  term depending on     (i,j-1,k)        */
     val[el] = 1/sqdeltahy*(
       entries[1]*Kfunprime(entries[4],a,gamma,Ks)*chi(entries[4],entries[1])
@@ -1528,7 +1524,6 @@ static int jac(N_Vector yvec, N_Vector fvec, SUNMatrix J,
       icol[el] = psb_c_l_ijk2idx(ijkinsert,sizes,3,0);
       el=el+1;
     }
-    //fprintf(stdout, "val = %e\n",val[el]);
     /* term depending on      (i,j,k-1)        */
     val[el] = 1/sqdeltahz*(
       entries[1]*Kfunprime(entries[6],a,gamma,Ks)*chi(entries[1],entries[6])
@@ -1540,7 +1535,6 @@ static int jac(N_Vector yvec, N_Vector fvec, SUNMatrix J,
       icol[el] = psb_c_l_ijk2idx(ijkinsert,sizes,3,0);
       el=el+1;
     }
-    //fprintf(stdout, "val = %e\n",val[el]);
     /* term depending on      (i,j,k)          */
     val[el] = ((rho*phi)/dt)*Sfunprime(entries[1],alpha,beta,thetas,thetar)
       -(entries[2]*Kfunprime(entries[1],a,gamma,Ks)*chi(entries[2],entries[1]))/sqdeltahx
@@ -1566,7 +1560,6 @@ static int jac(N_Vector yvec, N_Vector fvec, SUNMatrix J,
     ijkinsert[0]=ix; ijkinsert[1]=iy; ijkinsert[2]=iz;
     icol[el] = psb_c_l_ijk2idx(ijkinsert,sizes,3,0);
     el=el+1;
-    //fprintf(stdout, "val = %e\n",val[el]);
     /*  term depending on     (i+1,j,k)        */
     val[el] = 1/sqdeltahx*(
       entries[1]*Kfunprime(entries[3],a,gamma,Ks)*chi(entries[1],entries[3])
@@ -1578,7 +1571,6 @@ static int jac(N_Vector yvec, N_Vector fvec, SUNMatrix J,
       icol[el] = psb_c_l_ijk2idx(ijkinsert,sizes,3,0);
       el=el+1;
     }
-    //fprintf(stdout, "val = %e\n",val[el]);
     /*  term depending on     (i,j+1,k)        */
     val[el] = 1/sqdeltahy*(
       entries[1]*Kfunprime(entries[5],a,gamma,Ks)*chi(entries[5],entries[1])
@@ -1715,11 +1707,6 @@ static double upstream(double pL, double pU, void *user_data){
   }else{
     res = Kfun(pL,a,gamma,Ks);
   }
-
- //  if( res != 0){
- //     fprintf(stdout,"Kav(%1.16f,%1.16f,%1.16f,%1.16f,%1.16f) = %1.16f\n",
- //     pL,pU,a,gamma,Ks,res);
- // }
 
   return(res);
 }
