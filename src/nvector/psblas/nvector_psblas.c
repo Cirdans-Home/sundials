@@ -135,20 +135,21 @@ N_Vector N_VNew_PSBLAS(psb_c_ctxt *cctxt, psb_c_descriptor *cdh)
   on the PSBLAS context cctxt with the communicator cdh
   */
   N_Vector v;
-  psb_c_dvector *pvec;
+  psb_c_dvector *pvec = NULL;
 
   v = NULL;
   v = N_VNewEmpty_PSBLAS(cctxt, cdh);
   if (v == NULL) return(NULL);
 
   /* Define new PSBLAS Vector */
-  pvec = psb_c_new_dvector();
+  // pvec =
   /* Allocate mem space for the vector on the comunicator cdh */
-  psb_c_dgeall(pvec,cdh);
+  // psb_c_dgeall(pvec,cdh);
 
   /* Attach data */
   NV_OWN_DATA_P(v) = SUNTRUE;
-  NV_PVEC_P(v)     = pvec;
+  NV_PVEC_P(v)     = psb_c_new_dvector();
+  psb_c_dgeall(NV_PVEC_P(v),cdh);
 
   return(v);
 }
