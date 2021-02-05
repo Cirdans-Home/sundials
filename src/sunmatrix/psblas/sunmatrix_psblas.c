@@ -209,6 +209,7 @@ void SUNMatDestroy_PSBLAS(SUNMatrix A)
   /* Free the PSBLAS Sparse Matrix */
   psb_c_dspfree(SM_PMAT_P(A), SM_DESCRIPTOR_P(A));
   /* Free the NMATRIX_PSBLAS Structure */
+	free(SM_PMAT_P(A));
   free(A->content); A->content = NULL;
   free(A->ops);  A->ops = NULL;
   free(A); A = NULL;

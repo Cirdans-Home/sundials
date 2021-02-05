@@ -420,6 +420,7 @@ void N_VDestroy_PSBLAS(N_Vector v)
     if ((info=psb_c_dgefree(NV_PVEC_P(v),NV_DESCRIPTOR_P(v)))!=0){
       printf("PSBLAS Error %d in freeing vector\n",info);
     }
+    free(NV_PVEC_P(v));
     NV_PVEC_P(v) = NULL;
   }
   free(v->content); v->content = NULL;
