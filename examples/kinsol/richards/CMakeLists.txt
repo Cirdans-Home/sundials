@@ -21,6 +21,7 @@
 SET(KINSOL_examples
   "richards\;<\;kinsol.inp"
 	"richardsmatrixfree\;<\;kinsol.inp"
+	"richardsvangenuchten\;<\;kinsolvangenucthen.inp"
   )
 
 # Dependencies for kinsol examples
@@ -104,7 +105,7 @@ FOREACH(example_tuple ${KINSOL_examples})
 
   # install example source and out files
   IF(EXAMPLES_INSTALL)
-    INSTALL(FILES ${example}.c kinsol.inp
+    INSTALL(FILES ${example}.c kinsol.inp kinsolvangenucthen.inp
       DESTINATION ${EXAMPLES_INSTALL_PATH}/kinsol/richards)
   ENDIF()
 
