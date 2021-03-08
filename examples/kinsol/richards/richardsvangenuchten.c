@@ -1614,10 +1614,10 @@ static double Sfun(double p, double alpha, double n, double thetas,
 
   double s = 0.0;
 
-  if (p < 0){
+  if (p > 0.0){
     s = phi;
   } else {
-    s = (thetas-thetar)/pow(1.0 + alpha*p,1.0-1.0/n) + thetar;
+    s = (thetas-thetar)/pow(1.0 + alpha*SUNRabs(p),1.0-1.0/n) + thetar;
   }
 
   return(s);
@@ -1626,12 +1626,12 @@ static double Kfun(double p, double alpha, double n, double Ks){
 
   double K = 0.0;
 
-  if (p < 0){
+  if (p > 0.0){
      K = Ks;
   } else {
-     K = Ks*( 1.0 - pow(alpha*p,n-1.0)/
-               pow(1.0 + pow(alpha*p,n),1.0-1.0/n))/
-               pow(1.0 + pow(alpha*p,n),(1.0-1.0/n)/2.0);
+     K = Ks*( 1.0 - pow(alpha*SUNRabs(p),n-1.0)/
+               pow(1.0 + pow(alpha*SUNRabs(p),n),1.0-1.0/n))/
+               pow(1.0 + pow(alpha*SUNRabs(p),n),(1.0-1.0/n)/2.0);
   }
 
   return(K);
@@ -1642,8 +1642,10 @@ static double Sfunprime(double p, double alpha, double n, double thetas,
 
   double s = 0.0;
 
-  if (p > 0.0){
-    s = (-1.0 + 1.0/n)*alpha*pow(1.0 + alpha*p,-2.0+1.0/n)*(thetas-thetar);
+  if (p < 0.0){
+    s = alpha*(-1. + 1./n)*(-thetar + thetas)*
+         pow(1. + alpha*SUNRabs(p),-2. + 1./n)*
+         sgn(p);
   }
 
   return(s);
@@ -1653,9 +1655,15 @@ static double Kfunprime(double p, double alpha, double n, double Ks){
 
   double K = 0.0;
 
-  if ( p > 0.0 ){
-   K = 0.5*Ks*(-1+n)*alpha*pow(p*alpha,-2+n)*pow(1+pow(p*alpha,n),0.5*(1.0/n -5.0))
-   *(-p*alpha*(1+pow(alpha*p,n)) + (-2 + pow(p*alpha,n))*pow(1+pow(p*alpha,n),1.0/n));
+  if ( p < 0.0 ){
+     K = (pow(alpha,-1. + n)*Ks*pow(SUNRabs(p),-4. + n)*
+     (pow(alpha,1.)*(0.5 - 0.5*n)*pow(SUNRabs(p),3.)*
+        pow(1. + pow(alpha,n)*pow(SUNRabs(p),n),3.5 + 0.5/n) +
+       pow(alpha,n)*(-1.5 + 1.5*n)*pow(SUNRabs(p),2. + n)*
+        pow(1. + pow(alpha,n)*pow(SUNRabs(p),n),2.5 + 1.5/n) +
+       (1. - 1.*n)*pow(SUNRabs(p),2.)*
+        pow(1. + pow(alpha,n)*pow(SUNRabs(p),n),3.5 + 1.5/n))*
+     sgn(p))/pow(1. + pow(alpha,n)*pow(SUNRabs(p),n),5.);
   }
 
   return(K);
