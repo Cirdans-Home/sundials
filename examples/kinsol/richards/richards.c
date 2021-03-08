@@ -75,7 +75,9 @@
   static double source(double x, double y, double z, double t);
   static double boundary(double x, double y, double z, double t, void *user_data);
   static double upstream(double pL, double pU, void *user_data);
-  static double chi(double pU, double pL);
+  static double upstream10(double pL, double pU, void *user_data);
+  static double upstream01(double pL, double pU, void *user_data);
+  static double chi(double pL, double pU);
 
  /*-------------------------------------------------
   * Routine to read input from file
@@ -1312,15 +1314,26 @@ static int funcprpr(N_Vector u, N_Vector fval, void *user_data)
      }
      // We have now recovered all the entries, and we can compute the glob_rowth
      // entry of the funciton
-      val[0] = ((rho*phi)/dt)*(Sfun(entries[1],alpha,beta,thetas,thetar)
-      - Sfun(entries[0],alpha,beta,thetas,thetar)) + (
-      - upstream(entries[3],entries[1],user_data)*(entries[3]-entries[1])
-      + upstream(entries[1],entries[2],user_data)*(entries[1]-entries[2]))/sqdeltahx +
-      (- upstream(entries[5],entries[1],user_data)*(entries[5]-entries[1])
-      + upstream(entries[1],entries[4],user_data)*(entries[1]-entries[4]))/sqdeltahy +
-      (- upstream(entries[7],entries[1],user_data)*(entries[7]-entries[1])
-      + upstream(entries[1],entries[6],user_data)*(entries[1]-entries[6]))/sqdeltahz
-      + (Kfun(entries[6],a,gamma,Ks) - Kfun(entries[7],a,gamma,Ks))/deltahz2;
+      // val[0] = ((rho*phi)/dt)*(Sfun(entries[1],alpha,beta,thetas,thetar)
+      // - Sfun(entries[0],alpha,beta,thetas,thetar)) + (
+      // - upstream(entries[3],entries[1],user_data)*(entries[3]-entries[1])
+      // + upstream(entries[1],entries[2],user_data)*(entries[1]-entries[2]))/sqdeltahx +
+      // (- upstream(entries[5],entries[1],user_data)*(entries[5]-entries[1])
+      // + upstream(entries[1],entries[4],user_data)*(entries[1]-entries[4]))/sqdeltahy +
+      // (- upstream(entries[7],entries[1],user_data)*(entries[7]-entries[1])
+      // + upstream(entries[1],entries[6],user_data)*(entries[1]-entries[6]))/sqdeltahz
+      // + (Kfun(entries[6],a,gamma,Ks) - Kfun(entries[7],a,gamma,Ks))/deltahz2;
+
+      val[0] = (rho*phi/dt)*(Sfun(entries[1],alpha,beta,thetas,thetar)
+       -Sfun(entries[0],alpha,beta,thetas,thetar))
+       - upstream(entries[3],entries[1],user_data)*(entries[3]-entries[1])/sqdeltahx
+       + upstream(entries[1],entries[2],user_data)*(entries[1]-entries[2])/sqdeltahx
+       - upstream(entries[5],entries[1],user_data)*(entries[5]-entries[1])/sqdeltahy
+       + upstream(entries[1],entries[4],user_data)*(entries[1]-entries[4])/sqdeltahy
+       - upstream(entries[7],entries[1],user_data)*(entries[7]-entries[1])/sqdeltahz
+       + upstream(entries[1],entries[6],user_data)*(entries[1]-entries[6])/sqdeltahz
+       + ( Kfun(entries[6],a,gamma,Ks) - Kfun(entries[7],a,gamma,Ks) )/deltahz2;
+
 
      irow[0] = glob_row;
      if(psb_c_dgeins(1,irow,val,NV_PVEC_P(fval),NV_DESCRIPTOR_P(fval))!=0)
@@ -1503,91 +1516,67 @@ static int jac(N_Vector yvec, N_Vector fvec, SUNMatrix J,
     of the current row of the Jacobian we can loop through the different nonzero
     elements and compute the relative values.                                 */
     /*  term depending on   (i-1,j,k)        */
-    val[el] = 1/sqdeltahx*(
-      entries[1]*Kfunprime(entries[2],a,gamma,Ks)*chi(entries[1],entries[2])
-      -entries[2]*Kfunprime(entries[2],a,gamma,Ks)*chi(entries[1],entries[2])
-      -1*upstream(entries[2],entries[1],user_data)
-    );
+    val[el] = -(upstream(entries[1],entries[2],user_data)/sqdeltahx) +
+   ((entries[1] - entries[2])*upstream01(entries[1],entries[2],user_data))/sqdeltahx;
     if(ix != 0){
       ijkinsert[0]=ix-1; ijkinsert[1]=iy; ijkinsert[2]=iz;
       icol[el] = psb_c_l_ijk2idx(ijkinsert,sizes,3,0);
       el=el+1;
     }
     /*  term depending on     (i,j-1,k)        */
-    val[el] = 1/sqdeltahy*(
-      entries[1]*Kfunprime(entries[4],a,gamma,Ks)*chi(entries[4],entries[1])
-      -entries[2]*Kfunprime(entries[4],a,gamma,Ks)*chi(entries[4],entries[1])
-      -upstream(entries[1],entries[4],user_data)
-    );
+    val[el] = -(upstream(entries[1],entries[4],user_data)/sqdeltahy) +
+   ((entries[1] - entries[4])*upstream01(entries[1],entries[4],user_data))/sqdeltahy;
     if (iy != 0){
       ijkinsert[0]=ix; ijkinsert[1]=iy-1; ijkinsert[2]=iz;
       icol[el] = psb_c_l_ijk2idx(ijkinsert,sizes,3,0);
       el=el+1;
     }
     /* term depending on      (i,j,k-1)        */
-    val[el] = 1/sqdeltahz*(
-      entries[1]*Kfunprime(entries[6],a,gamma,Ks)*chi(entries[1],entries[6])
-      -entries[2]*Kfunprime(entries[6],a,gamma,Ks)*chi(entries[1],entries[6])
-      -1*upstream(entries[6],entries[1],user_data)
-      ) + Kfunprime(entries[6],a,gamma,Ks)/deltahz2;
-    if (iz != 0){
+    val[el] = -(upstream(entries[1],entries[6],user_data)/sqdeltahz) +
+   ((entries[1] - entries[6])*upstream01(entries[1],entries[6],user_data))/sqdeltahz +
+   Kfunprime(entries[6],alpha,gamma,Ks)/deltahz2;
+       if (iz != 0){
       ijkinsert[0]=ix; ijkinsert[1]=iy; ijkinsert[2]=iz-1;
       icol[el] = psb_c_l_ijk2idx(ijkinsert,sizes,3,0);
       el=el+1;
     }
     /* term depending on      (i,j,k)          */
-    val[el] = ((rho*phi)/dt)*Sfunprime(entries[1],alpha,beta,thetas,thetar)
-      -(entries[2]*Kfunprime(entries[1],a,gamma,Ks)*chi(entries[2],entries[1]))/sqdeltahx
-      -(entries[4]*Kfunprime(entries[1],a,gamma,Ks)*chi(entries[4],entries[1]))/sqdeltahy
-      -(entries[6]*Kfunprime(entries[1],a,gamma,Ks)*chi(entries[6],entries[1]))/sqdeltahz
-      -(entries[3]*Kfunprime(entries[1],a,gamma,Ks)*(1.0-chi(entries[1],entries[3])))/sqdeltahx
-      -(entries[5]*Kfunprime(entries[1],a,gamma,Ks)*(1.0-chi(entries[1],entries[5])))/sqdeltahy
-      -(entries[7]*Kfunprime(entries[1],a,gamma,Ks)*(1.0-chi(entries[1],entries[7])))/sqdeltahz
-      +(entries[1]*Kfunprime(entries[1],a,gamma,Ks))*(
-         ((1.0-chi(entries[1],entries[3]))+chi(entries[2],entries[1]))/sqdeltahx
-        +((1.0-chi(entries[1],entries[5]))+chi(entries[4],entries[1]))/sqdeltahy
-        +((1.0-chi(entries[1],entries[7]))+chi(entries[6],entries[1]))/sqdeltahz
-      )
-      +(1/sqdeltahx)*(
-        upstream(entries[3],entries[1],user_data)
-        +upstream(entries[2],entries[1],user_data))
-      +(1/sqdeltahy)*(
-        +upstream(entries[1],entries[5],user_data)
-        +upstream(entries[6],entries[1],user_data))
-      +(1/sqdeltahz)*(
-        +upstream(entries[1],entries[7],user_data)
-        +upstream(entries[6],entries[1],user_data));
+    val[el] = upstream(entries[1],entries[2],user_data)/sqdeltahx +
+      upstream(entries[1],entries[4],user_data)/sqdeltahy +
+      upstream(entries[1],entries[6],user_data)/sqdeltahz +
+      upstream(entries[3],entries[1],user_data)/sqdeltahx +
+      upstream(entries[5],entries[1],user_data)/sqdeltahy +
+      upstream(entries[7],entries[1],user_data)/sqdeltahz -
+      ((-entries[1] + entries[3])*upstream01(entries[3],entries[1],user_data))/sqdeltahx -
+      ((-entries[1] + entries[5])*upstream01(entries[5],entries[1],user_data))/sqdeltahy -
+      ((-entries[1] + entries[7])*upstream01(entries[7],entries[1],user_data))/sqdeltahz +
+      ((entries[1] - entries[2])*upstream10(entries[1],entries[2],user_data))/sqdeltahx +
+      ((entries[1] - entries[4])*upstream10(entries[1],entries[4],user_data))/sqdeltahy +
+      ((entries[1] - entries[6])*upstream10(entries[1],entries[6],user_data))/sqdeltahz +
+      (phi*rho*Sfunprime(entries[1],alpha,beta,thetas,thetar))/dt;
     ijkinsert[0]=ix; ijkinsert[1]=iy; ijkinsert[2]=iz;
     icol[el] = psb_c_l_ijk2idx(ijkinsert,sizes,3,0);
     el=el+1;
     /*  term depending on     (i+1,j,k)        */
-    val[el] = 1/sqdeltahx*(
-      entries[1]*Kfunprime(entries[3],a,gamma,Ks)*chi(entries[1],entries[3])
-      - entries[3]*Kfunprime(entries[3],a,gamma,Ks)*chi(entries[1],entries[3])
-      - upstream(entries[1],entries[3],user_data)
-    );
+    val[el] = -(upstream(entries[3],entries[1],user_data)/sqdeltahx) -
+   ((-entries[1] + entries[3])*upstream10(entries[3],entries[1],user_data))/sqdeltahx;
     if (ix != idim-1) {
       ijkinsert[0]=ix+1; ijkinsert[1]=iy; ijkinsert[2]=iz;
       icol[el] = psb_c_l_ijk2idx(ijkinsert,sizes,3,0);
       el=el+1;
     }
     /*  term depending on     (i,j+1,k)        */
-    val[el] = 1/sqdeltahy*(
-      entries[1]*Kfunprime(entries[5],a,gamma,Ks)*chi(entries[5],entries[1])
-      - entries[5]*Kfunprime(entries[5],a,gamma,Ks)*chi(entries[5],entries[1])
-      - upstream(entries[1],entries[5],user_data)
-    );
-    if (iy != idim-1){
+    val[el] = -(upstream(entries[5],entries[1],user_data)/sqdeltahy) -
+      ((-entries[1] + entries[5])*upstream10(entries[5],entries[1],user_data))/sqdeltahy;
+       if (iy != idim-1){
       ijkinsert[0]=ix; ijkinsert[1]=iy+1; ijkinsert[2]=iz;
       icol[el] = psb_c_l_ijk2idx(ijkinsert,sizes,3,0);
       el=el+1;
     }
     /* term depending on      (i,j,k+1)        */
-    val[el] = 1/sqdeltahz*(
-      entries[1]*Kfunprime(entries[7],a,gamma,Ks)*chi(entries[7],entries[1])
-      - entries[7]*Kfunprime(entries[7],a,gamma,Ks)*chi(entries[7],entries[1])
-      - upstream(entries[1],entries[7],user_data)
-      ) - Kfunprime(entries[7],a,gamma,Ks)/deltahz2;
+    val[el] = -(upstream(entries[7],entries[1],user_data)/sqdeltahz) -
+   ((-entries[1] + entries[7])*upstream10(entries[7],entries[1],user_data))/sqdeltahz -
+   Kfunprime(entries[7],a,gamma,Ks)/deltahz2;
     if (iz != idim-1){
       ijkinsert[0]=ix; ijkinsert[1]=iy; ijkinsert[2]=iz+1;
       icol[el] = psb_c_l_ijk2idx(ijkinsert,sizes,3,0);
@@ -1709,6 +1698,45 @@ static double upstream(double pL, double pU, void *user_data){
   }
 
   return(res);
+}
+
+static double upstream10(double pL, double pU, void *user_data){
+   /* Derivative (1,0) of upstream mean for the Ks function */
+   struct user_data_for_f *input = user_data;
+   double a, gamma, Ks;
+   double res;
+
+   a      = input->a;
+   gamma  = input->gamma;
+   Ks     = input->Ks;
+
+   res = 0.0;
+
+   if ((pL-pU) > 0){
+      res = Kfunprime(pL, a,gamma,Ks);
+   }
+
+   return(res);
+
+}
+
+static double upstream01(double pL, double pU, void *user_data){
+   /* Derivative (0,1) of upstream mean for the Ks function */
+   struct user_data_for_f *input = user_data;
+   double a, gamma, Ks;
+   double res;
+
+   a      = input->a;
+   gamma  = input->gamma;
+   Ks     = input->Ks;
+
+   res = 0.0;
+
+   if ((pL-pU) <= 0){
+      res = Kfunprime(pU, a,gamma,Ks);
+   }
+
+   return(res);
 }
 
 static double chi(double pL, double pU){
