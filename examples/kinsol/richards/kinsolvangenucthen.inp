@@ -1,10 +1,10 @@
 %%%%%%%%%%%  Problem Parameters %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 50                    ! x Domain size (actual system is this times ...)
 50                    ! y Domain size (... this times ...)
-50                    ! z Domain size (... this)
-1.0                   ! Size x of the box
-1.0                   ! Size y of the box
-1.0                   ! Size z of the box
+40                    ! z Domain size (... this)
+10.0                   ! Size x of the box
+10.0                   ! Size y of the box
+20.0                   ! Size z of the box
 1                     ! θs : Saturated moisture contents
 0.2                   ! θr : Residual moisture contents
 6                     ! α  : van Genuchten soil parameter [L^-1]
@@ -12,11 +12,11 @@
 10                    ! Ks : Saturated hydraulic conductivity
 1.0                   ! ρ  : Water density
 0.1                   ! ϕ  : Porosity of the medium
-2.0                   ! pr : Value of preassure head at the boundary
-1                     ! Tmax : Maximum time of simulation
+-20.0                 ! pr : Value of preassure head at the boundary
+10                    ! Tmax : Maximum time of simulation
 2                     ! Number of dimension of the processors grid: 2 or 3
 %%%%%%%%%%%  Newton Parameters %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-500                   ! Nt : Number of time steps (dt = Tmax/(Nt + 1))
+10                    ! Nt : Number of time steps (dt = Tmax/(Nt + 1))
 10                    ! Number of performed time-steps (<= Nt)
 200                   ! Max. number of nonlinear iterations
 1e-5                  ! Tolerance for the Newton Method (fnormtol)
