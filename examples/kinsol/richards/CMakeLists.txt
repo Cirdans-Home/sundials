@@ -20,7 +20,6 @@
 # Examples using SUNDIALS linear solvers
 SET(KINSOL_examples
   "richards\;<\;kinsol.inp"
-	"richardsmatrixfree\;<\;kinsol.inp"
 	"richardsvangenuchten\;<\;kinsolvangenucthen.inp"
   )
 
