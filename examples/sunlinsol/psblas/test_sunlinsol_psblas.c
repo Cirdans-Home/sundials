@@ -239,12 +239,10 @@ int main(int argc, char *argv[])
   options.istop  = istop;
   /* Create PSBLAS/MLD2P4 linear solver */
   LS = SUNLinSol_PSBLAS(options, methd, ptype, cctxt);
-  SUNLinSolInitialize(LS);
-  SUNLinSolSeti_PSBLAS(LS,"SMOOTHER_SWEEPS",2);
-  SUNLinSolSeti_PSBLAS(LS,"SUB_FILLIN",1);
+  SUNLinSolInitialize_PSBLAS(LS);
+  SUNLinSolSetc_PSBLAS(LS,"SMOOTHER_TYPE","BJAC");
   SUNLinSolSetc_PSBLAS(LS,"COARSE_SOLVE","BJAC");
-  SUNLinSolSetc_PSBLAS(LS,"COARSE_SUBSOLVE","ILU");
-  SUNLinSolSeti_PSBLAS(LS,"COARSE_FILLIN",0);
+  SUNLinSolSeti_PSBLAS(LS,"COARSE_SWEEPS",8);
 
   /* On the call of the test the vector x should contain the solution */
   SUNMatMatvec(A,xhat,b);
@@ -269,11 +267,11 @@ int main(int argc, char *argv[])
   /* check if any other process failed */
   (void) MPI_Allreduce(&passfail, &fails, 1, MPI_INT, MPI_MAX, comm);
 
-  // SUNLinSolFree(LS);
-  // SUNMatDestroy(A);
-  // N_VDestroy(xhat);
-  // N_VDestroy(x);
-  // N_VDestroy(b);
+  SUNLinSolFree(LS);
+  SUNMatDestroy(A);
+  N_VDestroy(xhat);
+  N_VDestroy(x);
+  N_VDestroy(b);
 
   /* Free solver and vectors */
   if ((info=psb_c_cdfree(cdh))!=0) {
@@ -282,13 +280,13 @@ int main(int argc, char *argv[])
   }
 
   free(cdh);
-  
-  if (myid == 0) fprintf(stderr,"program completed successfully\n");
+
+  if (myid == 0) fprintf(stderr,"program completed successfully, fails is %d\n",passfail);
 
   psb_c_barrier(*cctxt);
   psb_c_exit(*cctxt);
 
-  return(fails);
+  return(passfail);
 }
 
 int check_vector(N_Vector X, N_Vector Y, realtype tol)
