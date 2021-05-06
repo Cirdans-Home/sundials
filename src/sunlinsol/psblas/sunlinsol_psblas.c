@@ -215,7 +215,10 @@ int SUNLinSolSetup_PSBLAS(SUNLinearSolver S, SUNMatrix A){
     }
   }
   /* Print out information on the preconditioner */
-  if(strcmp(LS_PTYPE_P(S),"ML") == 0) amg_c_ddescr(LS_MLPREC_P(S));
+  if(strcmp(LS_PTYPE_P(S),"ML") == 0) {
+    if(iam==0) printf("\tDescription of the preconditioner:\n\n");
+    amg_c_ddescr(LS_MLPREC_P(S));
+  }
   if(iam==0) printf("\tBuilding phase of the preconditioner completed\n\n");
   return(SUNLS_SUCCESS);
 
