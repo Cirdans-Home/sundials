@@ -63,17 +63,16 @@ VCYCLE                      ! Type of multilevel CYCLE: VCYCLE WCYCLE KCYCLE MUL
 1                           ! Number of outer sweeps for ML
 -3                          ! Max Number of levels in a multilevel preconditioner; if <0, lib default
 -3                          ! Target coarse matrix size; if <0, lib default
-DEC                         ! Parallel aggregation: DEC, SYMDEC
+COUPLED                     ! Parallel aggregation: DEC, SYMDEC, COUPLED
 SMOOTHED                    ! Aggregation prolongator: SMOOTHED UNSMOOTHED
-SOC1                        ! Type of aggregation: SOC1 (Vanek&B&M), SOC2(Gratton), BCM (BootCMatch)
+MATCHBOXP                   ! Type of aggregation: SOC1 (Vanek&B&M), SOC2(Gratton), BCM (BootCMatch)
+8                           ! Requested size of the aggregates for MATCHBOXP
 NATURAL                     ! Ordering of aggregation NATURAL DEGREE
-FILTER                      ! Filtering of matrix:  FILTER NOFILTER
+NOFILTER                      ! Filtering of matrix:  FILTER NOFILTER
 -4.0                        ! Coarsening ratio, if < 0 use library default1
 -0.0100d0                   ! Smoothed aggregation threshold, ignored if < 0
-0                           ! BCM method: 0 PREIS, 1 MC64, 2 SPRAL (auction)
-3                           ! BCM Pairing sweeps
 %%%%%%%%%%%  Coarse level solver  %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-BJAC                        ! Coarsest-level solver: MUMPS(global) UMF SLU SLUDIST JACOBI GS BJAC RKR(global)
+KRM                        ! Coarsest-level solver: MUMPS(global) UMF SLU SLUDIST JACOBI GS BJAC RKR(global)
 ILU                         ! Coarsest-level subsolver for BJAC: ILU ILUT MILU UMF MUMPS(local) SLU RKR(local)
 LLK                         ! AINV Variant for the coarse solver
 FCG                         ! Krylov method for RKR solver/subsolver, ignored otherwise
@@ -83,8 +82,9 @@ DIST                        ! Coarsest-level matrix distribution: DIST  REPL
 1.d-4                       ! Coarsest-level threshold T for ILU(T,P)
 30                          ! Number of sweeps for JACOBI/GS/BJAC coarsest-level solver
 30                          ! maxit for RKR
-1.d-4                       ! eps for RKR
-5                           ! itrace for RKR
+0.001                       ! eps for RKR
+0                           ! itrace for RKR
+2                           ! istop for RKR
 F                           ! Check the BJAC residual
 F                           ! Print the BJAC residual
 5                           ! ITRACE for residual check

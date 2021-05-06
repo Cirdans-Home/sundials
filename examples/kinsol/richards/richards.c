@@ -79,6 +79,8 @@
   static double upstream01(double pL, double pU, void *user_data);
   static double chi(double pL, double pU);
 
+  bool BUILD_AUXILIARY_MATRIX = true;
+
  /*-------------------------------------------------
   * Routine to read input from file
   *------------------------------------------------*/
@@ -185,6 +187,7 @@
     char cmat[20], csolve[20], csbsolve[20], cvariant[20], ckryl[20]; // coarsest-level solver
     char checkres[20], printres[20];
     psb_i_t cfill, cinvfill, cjswp, crkiter, crktrace, checkiter, printiter, outer_sweeps;
+    psb_i_t aggr_size, crkistopc;
     psb_d_t cthres, crkeps, ctol;
     /* Parallel Environment */
     psb_c_ctxt *cctxt;
@@ -290,9 +293,10 @@
       get_iparm(stdin,&outer_sweeps);// Number of outer sweeps for ML
       get_iparm(stdin,&maxlevs);     // Max Number of levels in a multilevel preconditioner; if <0, lib default
       get_iparm(stdin,&csize);       // Target coarse matrix size; if <0, lib default
-      get_hparm(stdin,par_aggr_alg); // Parallel aggregation: DEC, SYMDEC
+      get_hparm(stdin,par_aggr_alg); // Parallel aggregation: DEC, SYMDEC, COUPLED
       get_hparm(stdin,aggr_prol);    // Aggregation prolongator: SMOOTHED UNSMOOTHED
-      get_hparm(stdin,aggr_type);    // Type of aggregation: SOC1 (Vanek&B&M), SOC2(Gratton), BCM (BootCMatch)
+      get_hparm(stdin,aggr_type);    // Type of aggregation: SOC1 (Vanek&B&M), SOC2(Gratton), MATCHBOXP
+      get_iparm(stdin,&aggr_size);   // Requested size of the aggregates for MATCHBOXP
       get_hparm(stdin,aggr_ord);     // Ordering of aggregation NATURAL DEGREE
       get_hparm(stdin,aggr_filter);  // Filtering of matrix:  FILTER NOFILTER
       get_dparm(stdin,&mncrratio);   // Coarsening ratio, if < 0 use library default1
@@ -300,8 +304,8 @@
       //if(thrvsz < 0) thrvsz = 1;
       //get_dparm2(stdin,athresv,thrvsz); // Thresholds
       get_dparm(stdin,&athres);      // Smoothed aggregation threshold, ignored if < 0
-      get_iparm(stdin,&bcm_alg);     // BCM method: 0 PREIS, 1 MC64, 2 SPRAL (auction)
-      get_iparm(stdin,&bcm_sweeps);  // BCM Pairing sweeps
+      //get_iparm(stdin,&bcm_alg);     // BCM method: 0 PREIS, 1 MC64, 2 SPRAL (auction)
+      //get_iparm(stdin,&bcm_sweeps);  // BCM Pairing sweeps
       //get_hparm(stdin, NULL); // Coarse level solver
       get_hparm(stdin,csolve);     // Coarsest-level solver: MUMPS(global) UMF SLU SLUDIST JACOBI GS BJAC RKR(global)
       get_hparm(stdin,csbsolve);   // Coarsest-level subsolver for BJAC: ILU ILUT MILU UMF MUMPS(local) SLU RKR(local)
@@ -315,6 +319,7 @@
       get_iparm(stdin,&crkiter);   // maxit for RKR
       get_dparm(stdin,&crkeps);    // eps for RKR
       get_iparm(stdin,&crktrace);  // itrace for RKR
+      get_iparm(stdin,&crkistopc); // istopc for RKR
       get_hparm(stdin,checkres);   // Check the BJAC residual: T F
       get_hparm(stdin,printres);   // Print the BJAC residual: T F
       get_iparm(stdin,&checkiter); // ITRACE for residual check
@@ -399,17 +404,18 @@
     psb_c_ibcast(*cctxt,1,&outer_sweeps,0);// Number of outer sweeps for ML
     psb_c_ibcast(*cctxt,1,&maxlevs,0);// Max Number of levels in a multilevel preconditioner; if <0, lib default
     psb_c_ibcast(*cctxt,1,&csize,0);  // Target coarse matrix size; if <0, lib default
-    psb_c_hbcast(*cctxt,par_aggr_alg,0); // Parallel aggregation: DEC, SYMDEC
+    psb_c_hbcast(*cctxt,par_aggr_alg,0); // Parallel aggregation: DEC, SYMDEC, COUPLED
     psb_c_hbcast(*cctxt,aggr_prol,0); // Aggregation prolongator: SMOOTHED UNSMOOTHED
-    psb_c_hbcast(*cctxt,aggr_type,0); // Type of aggregation: SOC1 (Vanek&B&M), SOC2(Gratton), BCM (BootCMatch)
+    psb_c_hbcast(*cctxt,aggr_type,0); // Type of aggregation: SOC1 (Vanek&B&M), SOC2(Gratton), MATCHBOXP
+    psb_c_ibcast(*cctxt,1,&aggr_size,0); // Requested size of the aggregates
     psb_c_hbcast(*cctxt,aggr_ord,0);  // Ordering of aggregation NATURAL DEGREE
     psb_c_hbcast(*cctxt,aggr_filter,0);// Filtering of matrix:  FILTER NOFILTER
     psb_c_dbcast(*cctxt,1,&mncrratio,0);// Coarsening ratio, if < 0 use library default1
     psb_c_ibcast(*cctxt,1,&thrvsz,0); // Number of thresholds in vector, next line ignored if <= 0
     //psb_c_dbcast(*cctxt,thrvsz,athresv,0); // Thresholds
     psb_c_dbcast(*cctxt,1,&athres,0); // Smoothed aggregation threshold, ignored if < 0
-    psb_c_ibcast(*cctxt,1,&bcm_alg,0);// BCM method: 0 PREIS, 1 MC64, 2 SPRAL (auction)
-    psb_c_ibcast(*cctxt,1,&bcm_sweeps,0); // BCM Pairing sweeps
+    //psb_c_ibcast(*cctxt,1,&bcm_alg,0);// BCM method: 0 PREIS, 1 MC64, 2 SPRAL (auction)
+    //psb_c_ibcast(*cctxt,1,&bcm_sweeps,0); // BCM Pairing sweeps
     // Coarse level solver
     psb_c_hbcast(*cctxt,csolve,0);     // Coarsest-level solver: MUMPS(global) UMF SLU SLUDIST JACOBI GS BJAC RKR(global)
     psb_c_hbcast(*cctxt,csbsolve,0);   // Coarsest-level subsolver for BJAC: ILU ILUT MILU UMF MUMPS(local) SLU RKR(local)
@@ -423,6 +429,7 @@
     psb_c_ibcast(*cctxt,1,&crkiter,0); // maxit for RKR
     psb_c_dbcast(*cctxt,1,&crkeps,0);  // eps for RKR
     psb_c_ibcast(*cctxt,1,&crktrace,0);// itrace for RKR
+    psb_c_ibcast(*cctxt,1,&crkistopc,0);// istopc for RKR
     psb_c_hbcast(*cctxt,checkres,0);   // Check the BJAC residual: T F
     psb_c_hbcast(*cctxt,printres,0);   // Print the BJAC residual: T F
     psb_c_ibcast(*cctxt,1,&checkiter,0); // ITRACE for residual check
@@ -608,7 +615,6 @@
      /* term depending on      (i,j,k)          */
      ijkinsert[0]=ix; ijkinsert[1]=iy; ijkinsert[2]=iz;
      icol[el] = psb_c_l_ijk2idx(ijkinsert,sizes,3,0);
-     if(glob_row == 4) fprintf(stderr, "I am %d glob_row %ld (%d,%d,%d) --> %ld \n",iam,glob_row,ijkinsert[0],ijkinsert[1],ijkinsert[2],icol[el]);
      el=el+1;
      /*  term depending on     (i,j,k+1)        */
      if (iz != kdim-1) {
@@ -728,18 +734,9 @@
       info = SUNLinSolSeti_PSBLAS(LS,"OUTER_SWEEPS",outer_sweeps);
       info = SUNLinSolSetc_PSBLAS(LS,"PAR_AGGR_ALG",par_aggr_alg);
       info = SUNLinSolSetc_PSBLAS(LS,"AGGR_PROL",aggr_prol);
-      // Options for BCM
-      if (strcmp(aggr_type,"BCM")==0){
-        // call prec%set(bcmag,info)
-        info = SUNLinSolSeti_PSBLAS(LS,"BCM_MATCH_ALG",bcm_alg);
-        info = SUNLinSolSeti_PSBLAS(LS,"BCM_SWEEPS",bcm_sweeps);
-      }else if(strcmp(aggr_type,"PARMATCH")==0){
-        // call prec%set(parmchag,info)
-         info = SUNLinSolSeti_PSBLAS(LS,"PRMC_SWEEPS",bcm_sweeps);
-         info = SUNLinSolSeti_PSBLAS(LS,"PRMC_NEED_SYMMETRIZE",1);
-      }else{
-        info = SUNLinSolSetc_PSBLAS(LS,"AGGR_TYPE",aggr_type);
-      }
+      info = SUNLinSolSetc_PSBLAS(LS,"AGGR_TYPE",aggr_type);
+      info = SUNLinSolSeti_PSBLAS(LS,"AGGR_SIZE",aggr_size);
+
       info = SUNLinSolSetc_PSBLAS(LS,"AGGR_ORD",aggr_ord);
       info = SUNLinSolSetc_PSBLAS(LS,"AGGR_FILTER",aggr_filter);
       if(csize > 0){
@@ -832,7 +829,6 @@
             info = SUNLinSolSetr_PSBLAS(LS,"MUMPS_RPAR_ENTRY",0.4);
             if (check_flag(&info, "MUMPS_RPAR_ENTRY", 1, iam)) psb_c_abort(*cctxt);
          }
-         // TODO: Support for RKR Solver!
          info = SUNLinSolSetc_PSBLAS(LS,"SMOOTHER_STOP",checkres);
          if (check_flag(&info, "SMOOTHER_STOP", 1, iam)) psb_c_abort(*cctxt);
          info = SUNLinSolSetc_PSBLAS(LS,"SMOOTHER_TRACE",printres);
@@ -843,6 +839,18 @@
          if (check_flag(&info, "SMOOTHER_ITRACE", 1, iam)) psb_c_abort(*cctxt);
          info = SUNLinSolSeti_PSBLAS(LS,"SMOOTHER_RESIDUAL",checkiter);
          if (check_flag(&info, "SMOOTHER_RESIDUAL", 1, iam)) psb_c_abort(*cctxt);
+      }
+      if( strcmp(csolve,"KRM")==0 ){
+         info = SUNLinSolSetc_PSBLAS(LS,"KRM_METHOD",ckryl);
+         if (check_flag(&info, "KRM_METHOD", 1, iam)) psb_c_abort(*cctxt);
+         info = SUNLinSolSeti_PSBLAS(LS,"KRM_ITMAX",crkiter);
+         if (check_flag(&info, "KRM_ITMAX", 1, iam)) psb_c_abort(*cctxt);
+         info = SUNLinSolSetr_PSBLAS(LS,"KRM_EPS",crkeps);
+         if (check_flag(&info, "KRM_EPS", 1, iam)) psb_c_abort(*cctxt);
+         info = SUNLinSolSeti_PSBLAS(LS,"KRM_ITRACE",crktrace);
+         if (check_flag(&info, "KRM_ITRACE", 1, iam)) psb_c_abort(*cctxt);
+         info = SUNLinSolSeti_PSBLAS(LS,"KRM_ISTOPC",crkistopc);
+         if (check_flag(&info, "KRM_ISTOPC", 1, iam)) psb_c_abort(*cctxt);
       }
       info = SUNLinSolSetc_PSBLAS(LS,"COARSE_MAT",cmat);
       if (check_flag(&info, "COARSE_MAT", 1, iam)) psb_c_abort(*cctxt);
@@ -1314,17 +1322,7 @@ static int funcprpr(N_Vector u, N_Vector fval, void *user_data)
      }
      // We have now recovered all the entries, and we can compute the glob_rowth
      // entry of the funciton
-      // val[0] = ((rho*phi)/dt)*(Sfun(entries[1],alpha,beta,thetas,thetar)
-      // - Sfun(entries[0],alpha,beta,thetas,thetar)) + (
-      // - upstream(entries[3],entries[1],user_data)*(entries[3]-entries[1])
-      // + upstream(entries[1],entries[2],user_data)*(entries[1]-entries[2]))/sqdeltahx +
-      // (- upstream(entries[5],entries[1],user_data)*(entries[5]-entries[1])
-      // + upstream(entries[1],entries[4],user_data)*(entries[1]-entries[4]))/sqdeltahy +
-      // (- upstream(entries[7],entries[1],user_data)*(entries[7]-entries[1])
-      // + upstream(entries[1],entries[6],user_data)*(entries[1]-entries[6]))/sqdeltahz
-      // + (Kfun(entries[6],a,gamma,Ks) - Kfun(entries[7],a,gamma,Ks))/deltahz2;
-
-      val[0] = (rho*phi/dt)*(Sfun(entries[1],alpha,beta,thetas,thetar)
+     val[0] = (rho*phi/dt)*(Sfun(entries[1],alpha,beta,thetas,thetar)
        -Sfun(entries[0],alpha,beta,thetas,thetar))
        - upstream(entries[3],entries[1],user_data)*(entries[3]-entries[1])/sqdeltahx
        + upstream(entries[1],entries[2],user_data)*(entries[1]-entries[2])/sqdeltahx
@@ -1600,10 +1598,162 @@ static int jac(N_Vector yvec, N_Vector fvec, SUNMatrix J,
   }
   input->jacobiancount += 1;
 
-
-  // We say to the linear solver on what matrix he has to compute the
+  // We build the symmetric approximation of the Jacobian on which we build the
   // preconditioner
-  SUNLinSolSetPreconditioner_PSBLAS(*(input->LS),J);
+  if (BUILD_AUXILIARY_MATRIX){
+
+     printf("Start building auxiliary matrix\n");
+
+     SUNMatZero_PSBLAS(input->B);
+     for (i=0; i<nl;  i++) {
+      glob_row=input->vl[i];                 // Get the index of the global row
+      // We compute the local indexes of the elements on the stencil
+      psb_c_l_idx2ijk(ijk,glob_row,sizes,3,0);
+      ix = ijk[0]; iy = ijk[1]; iz = ijk[2];
+      x = (ix+1)*deltahx; y = (iy+1)*deltahy; z = (iz+1)*deltahz;
+      el = 0;
+
+      /* To compute the expression of the Jacobian for Φ we first need to access
+      the entries for the current iterate, these are contained in the N_Vector
+      yvec. Another way of doing this would be assembling every time a bunch of
+      temporary matrices with the values of the nonlinear evaluations and doing
+      some matrix-matrix operationss. This way should be faster, and less taxing
+      on the memory.                                                            */
+      entries[1] = psb_c_dgetelem(NV_PVEC_P(yvec),glob_row,
+                                    NV_DESCRIPTOR_P(yvec)); // u^(l)_{i,j,k}
+      if (ix == 0) {        // Cannot do i-1
+         entries[2] = boundary(0.0,y,z,t,user_data); // u^(l)_{i-1,j,k}
+      }else{
+         ijk[0] = ix - 1; ijk[1] = iy; ijk[2] = iz;
+         entries[2] = psb_c_dgetelem(NV_PVEC_P(yvec),
+                                     psb_c_l_ijk2idx(ijk,sizes,3,0),
+                                     NV_DESCRIPTOR_P(yvec)); // u^(l)_{i-1,j,k}
+      }
+      if (ix == idim -1){
+         entries[3] = boundary(L,y,z,t,user_data);
+      }else{
+         ijk[0] = ix+1; ijk[1] = iy; ijk[2] = iz;
+         entries[3] = psb_c_dgetelem(NV_PVEC_P(yvec),
+                                     psb_c_l_ijk2idx(ijk,sizes,3,0),
+                                     NV_DESCRIPTOR_P(yvec));  // u^(l)_{i+1,j,k}
+      }
+      if (iy == 0){       // Cannot do j-1
+         entries[4] = boundary(x,0.0,z,t,user_data); // u^(l)_{i+1,j,k}
+      }else{
+         ijk[0] = ix; ijk[1] = iy-1; ijk[2] = iz;
+         entries[4] = psb_c_dgetelem(NV_PVEC_P(yvec),
+                                     psb_c_l_ijk2idx(ijk,sizes,3,0),
+                                     NV_DESCRIPTOR_P(yvec));  // u^(l)_{i,j-1,k}
+      }
+      if (iy == jdim -1){
+         entries[5] = boundary(x,L,z,t,user_data);
+      }else{
+         ijk[0] = ix; ijk[1] = iy+1; ijk[2] = iz;
+         entries[5] = psb_c_dgetelem(NV_PVEC_P(yvec),
+                                     psb_c_l_ijk2idx(ijk,sizes,3,0),
+                                     NV_DESCRIPTOR_P(yvec));  // u^(l)_{i,j+1,k}
+      }
+      if (iz == 0){       // Cannot do k-1
+         entries[6] = boundary(x,y,0.0,t,user_data);
+      }else{
+         ijk[0] = ix; ijk[1] = iy; ijk[2] = iz-1;
+         entries[6] = psb_c_dgetelem(NV_PVEC_P(yvec),
+                                     psb_c_l_ijk2idx(ijk,sizes,3,0),
+                                     NV_DESCRIPTOR_P(yvec));  // u^(l)_{i,j,k-1}
+      }
+      if (iz == kdim -1){ // Cannot do k+1
+         entries[7] = boundary(x,y,L,t,user_data);
+      }else{
+         ijk[0] = ix; ijk[1] = iy; ijk[2] = iz+1;
+         entries[7] = psb_c_dgetelem(NV_PVEC_P(yvec),
+                                     psb_c_l_ijk2idx(ijk,sizes,3,0),
+                                     NV_DESCRIPTOR_P(yvec));  // u^(l)_{i,j,k+1}
+      }
+
+      /* Now that we have all the entries of yvec needed to compute the entries
+      of the current row of the Jacobian we can loop through the different nonzero
+      elements and compute the relative values.                                 */
+      /*  term depending on   (i-1,j,k)        */
+      val[el] = -(upstream(entries[1],entries[2],user_data)/sqdeltahx) +
+     ((entries[1] - entries[2])*upstream01(entries[1],entries[2],user_data))/sqdeltahx;
+      if(ix != 0){
+         ijkinsert[0]=ix-1; ijkinsert[1]=iy; ijkinsert[2]=iz;
+         icol[el] = psb_c_l_ijk2idx(ijkinsert,sizes,3,0);
+         el=el+1;
+      }
+      /*  term depending on     (i,j-1,k)        */
+      val[el] = -(upstream(entries[1],entries[4],user_data)/sqdeltahy) +
+     ((entries[1] - entries[4])*upstream01(entries[1],entries[4],user_data))/sqdeltahy;
+      if (iy != 0){
+         ijkinsert[0]=ix; ijkinsert[1]=iy-1; ijkinsert[2]=iz;
+         icol[el] = psb_c_l_ijk2idx(ijkinsert,sizes,3,0);
+         el=el+1;
+      }
+      /* term depending on      (i,j,k-1)        */
+      val[el] = -(upstream(entries[1],entries[6],user_data)/sqdeltahz) +
+     ((entries[1] - entries[6])*upstream01(entries[1],entries[6],user_data))/sqdeltahz;
+          if (iz != 0){
+         ijkinsert[0]=ix; ijkinsert[1]=iy; ijkinsert[2]=iz-1;
+         icol[el] = psb_c_l_ijk2idx(ijkinsert,sizes,3,0);
+         el=el+1;
+      }
+      /* term depending on      (i,j,k)          */
+      val[el] = upstream(entries[1],entries[2],user_data)/sqdeltahx +
+         upstream(entries[1],entries[4],user_data)/sqdeltahy +
+         upstream(entries[1],entries[6],user_data)/sqdeltahz +
+         upstream(entries[3],entries[1],user_data)/sqdeltahx +
+         upstream(entries[5],entries[1],user_data)/sqdeltahy +
+         upstream(entries[7],entries[1],user_data)/sqdeltahz -
+         ((-entries[1] + entries[3])*upstream01(entries[3],entries[1],user_data))/sqdeltahx -
+         ((-entries[1] + entries[5])*upstream01(entries[5],entries[1],user_data))/sqdeltahy -
+         ((-entries[1] + entries[7])*upstream01(entries[7],entries[1],user_data))/sqdeltahz +
+         ((entries[1] - entries[2])*upstream10(entries[1],entries[2],user_data))/sqdeltahx +
+         ((entries[1] - entries[4])*upstream10(entries[1],entries[4],user_data))/sqdeltahy +
+         ((entries[1] - entries[6])*upstream10(entries[1],entries[6],user_data))/sqdeltahz +
+         (phi*rho*Sfunprime(entries[1],alpha,beta,thetas,thetar))/dt;
+      ijkinsert[0]=ix; ijkinsert[1]=iy; ijkinsert[2]=iz;
+      icol[el] = psb_c_l_ijk2idx(ijkinsert,sizes,3,0);
+      el=el+1;
+      /*  term depending on     (i+1,j,k)        */
+      val[el] = -(upstream(entries[3],entries[1],user_data)/sqdeltahx) -
+     ((-entries[1] + entries[3])*upstream10(entries[3],entries[1],user_data))/sqdeltahx;
+      if (ix != idim-1) {
+         ijkinsert[0]=ix+1; ijkinsert[1]=iy; ijkinsert[2]=iz;
+         icol[el] = psb_c_l_ijk2idx(ijkinsert,sizes,3,0);
+         el=el+1;
+      }
+      /*  term depending on     (i,j+1,k)        */
+      val[el] = -(upstream(entries[5],entries[1],user_data)/sqdeltahy) -
+         ((-entries[1] + entries[5])*upstream10(entries[5],entries[1],user_data))/sqdeltahy;
+          if (iy != idim-1){
+         ijkinsert[0]=ix; ijkinsert[1]=iy+1; ijkinsert[2]=iz;
+         icol[el] = psb_c_l_ijk2idx(ijkinsert,sizes,3,0);
+         el=el+1;
+      }
+      /* term depending on      (i,j,k+1)        */
+      val[el] = -(upstream(entries[7],entries[1],user_data)/sqdeltahz) -
+     ((-entries[1] + entries[7])*upstream10(entries[7],entries[1],user_data))/sqdeltahz;
+      if (iz != idim-1){
+         ijkinsert[0]=ix; ijkinsert[1]=iy; ijkinsert[2]=iz+1;
+         icol[el] = psb_c_l_ijk2idx(ijkinsert,sizes,3,0);
+         el=el+1;
+      }
+      for (k=0; k<el; k++) irow[k]=glob_row;
+      /* Insert the local portion into the Jacobian */
+      if ((info=psb_c_dspins(el,irow,icol,val,SM_PMAT_P(input->B),SM_DESCRIPTOR_P(input->B)))!=0)
+        fprintf(stderr,"From psb_c_dspins: %d\n",info);
+     }
+
+     tic = psb_c_wtime();
+     if ((info=psb_c_dspasb(SM_PMAT_P(input->B),SM_DESCRIPTOR_P(input->B)))!=0)  return(info);
+     toc = psb_c_wtime();
+     if (iam == 0) fprintf(stdout, "Buit auxiliary matrix in %lf s\n",toc-tic);
+     // We say to the linear solver on what matrix he has to compute the
+     // preconditioner
+     SUNLinSolSetPreconditioner_PSBLAS(*(input->LS),input->B);
+  } else {
+    SUNLinSolSetPreconditioner_PSBLAS(*(input->LS),J);
+  }
 
   return(info);
 }
