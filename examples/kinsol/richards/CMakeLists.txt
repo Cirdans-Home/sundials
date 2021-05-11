@@ -20,7 +20,6 @@
 # Examples using SUNDIALS linear solvers
 SET(KINSOL_examples
   "richards\;<\;kinsol.inp"
-	"richardsvangenuchten\;<\;kinsolvangenucthen.inp"
   )
 
 # Dependencies for kinsol examples
