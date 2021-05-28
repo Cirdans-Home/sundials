@@ -87,6 +87,7 @@ SUNLinearSolver SUNLinSol_PSBLAS(psb_c_SolverOptions options, char methd[], char
   content->cctxt=cctxt;
   strcpy(content->methd,methd);
   strcpy(content->ptype,ptype);
+  content->buildtype=0;
   /* We need to decide here between a PSBLAS or an AMG4PSBLAS preconditioner, this
   depends on the ptype string */
   if( strcmp(ptype,"NONE")==0 || strcmp(ptype,"BJAC")==0 || strcmp(ptype,"DIAG")==0 ){
@@ -167,6 +168,13 @@ int SUNLinSolSetup_PSBLAS(SUNLinearSolver S, SUNMatrix A){
   if (S == NULL || A == NULL) return(SUNLS_MEM_NULL);
   psb_c_info(*(LS_CCTXT_P(S)),&iam,&np);
 
+  if ( LS_BUILDTYPE_P(S) < 0 ) {
+    if(iam==0){
+      printf("The build phase has been inhibited, set the buildtype to a number");
+      printf(" greater or equal to 0, it is %d\n",LS_BUILDTYPE_P(S));
+      }
+  }
+
   // Use the information contained in A to setup the field in S
   LS_DESCRIPTOR_P(S) = SM_DESCRIPTOR_P(A);
   LS_PMAT_P(S)       = SM_PMAT_P(A);
@@ -208,10 +216,16 @@ int SUNLinSolSetup_PSBLAS(SUNLinearSolver S, SUNMatrix A){
       strcmp(LS_PTYPE_P(S),"GS") == 0 ||
       strcmp(LS_PTYPE_P(S),"AS") == 0 ||
       strcmp(LS_PTYPE_P(S),"FBGS") == 0 ){
-        ret = amg_c_dhierarchy_build(LS_BMAT_P(S),LS_DESCRIPTOR_P(S),LS_MLPREC_P(S));
-        if(ret != 0) return(SUNLS_PSET_FAIL_UNREC);
-        ret = amg_c_dsmoothers_build(LS_BMAT_P(S),LS_DESCRIPTOR_P(S),LS_MLPREC_P(S));
-        if(ret != 0) return(SUNLS_PSET_FAIL_UNREC);
+          if( LS_BUILDTYPE_P(S) == 0){
+          ret = amg_c_dhierarchy_build(LS_BMAT_P(S),LS_DESCRIPTOR_P(S),LS_MLPREC_P(S));
+          if(ret != 0) return(SUNLS_PSET_FAIL_UNREC);
+          ret = amg_c_dsmoothers_build(LS_BMAT_P(S),LS_DESCRIPTOR_P(S),LS_MLPREC_P(S));
+          if(ret != 0) return(SUNLS_PSET_FAIL_UNREC);
+        }if(LS_BUILDTYPE_P(S) == 1){
+          if(iam==0) printf("Updating strategy number 1.\n");
+          ret = amg_c_dsmoothers_build(LS_BMAT_P(S),LS_DESCRIPTOR_P(S),LS_MLPREC_P(S));
+          if(ret != 0) return(SUNLS_PSET_FAIL_UNREC);
+        }
     }
   }
   /* Print out information on the preconditioner */
@@ -344,6 +358,16 @@ int SUNLinSolSetr_PSBLAS(SUNLinearSolver S, const char *what, double val){
   return(amg_c_dprecsetr(LS_MLPREC_P(S), what, val));
 }
 
+int SUNLinSolSetbuildtype_PSBLAS(SUNLinearSolver S, int buildtype){
+  int info = -1;
+
+  if ( buildtype >= -1 && buildtype <= 1 ){
+    LS_BUILDTYPE_P(S) = buildtype;
+    info = 0;
+  }
+
+  return(info);
+}
 
 #ifdef __cplusplus
 }

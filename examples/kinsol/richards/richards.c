@@ -135,6 +135,7 @@
     psb_i_t functioncount;
     psb_i_t jacobiancount;
     psb_i_t verbosity;
+    bool buildjacobian;
   };
 
   struct performanceinfo {
@@ -584,6 +585,7 @@
    user_data.verbosity = verbositylevel; // 0 Do not print/dump anything,
                             // 1 Print what we are computing,
                             // 2 Print and dump everything (MEMORY! SMALL DEBUG)
+   user_data.buildjacobian = true; // At the begin we always need a Jacobian
 
    /*We need to reuse the same communicator many times, namely every time we
    need to populate a new Jacobian. Therefore we use the psb_c_cdins routine
@@ -1023,6 +1025,7 @@
      user_data.timestep = i;      // used to compute time depending quantities
      user_data.functioncount = 0; // reset counter for function evals
      user_data.jacobiancount = 0; // reset counter for Jacobian evals
+     user_data.buildjacobian = false;
 
      /* For Euler Time-Stepping we take note of the old pressure value */
      N_VLinearSum(1.0,u,0.0,user_data.oldpressure,user_data.oldpressure);
@@ -1409,6 +1412,12 @@ static int jac(N_Vector yvec, N_Vector fvec, SUNMatrix J,
   if( info != 0)
      fprintf(stderr, "Halo Error (yvec) on process %d info: %d\n",iam,info);
 
+  // Check if I have to build a Jacobian
+  if( !input->buildjacobian ){
+     input->buildjacobian = true;
+     return(info);
+  }
+
   if (iam == 0 && input->verbosity > 0){
     fprintf(stdout, "----------------------------------------------------------------------\n");
     fprintf(stdout, "Jacobian Evaluation on the parameters:\n");
@@ -1597,6 +1606,11 @@ static int jac(N_Vector yvec, N_Vector fvec, SUNMatrix J,
     SUNPSBLASMatrix_Print(J,"Jacobian",filename);
   }
   input->jacobiancount += 1;
+
+  if (input->jacobiancount == 2){
+   // We deactivate the build of the preconditioner
+   SUNLinSolSetbuildtype_PSBLAS(*(input->LS), 1);
+  }
 
   // We build the symmetric approximation of the Jacobian on which we build the
   // preconditioner

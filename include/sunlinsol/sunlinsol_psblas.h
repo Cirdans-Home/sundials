@@ -60,6 +60,9 @@ struct _SUNLinearSolverContent_PSBLAS {
   psb_c_ctxt *cctxt;           /* PSBLAS communicator                       */
   char methd[40];              /* String for Method and Preconditioner type */
   char ptype[20];
+  int buildtype;               /* -1 Do not build
+                                   0 Complete Build
+                                   1 Update strategy                        */
 };
 
 typedef struct _SUNLinearSolverContent_PSBLAS *SUNLinearSolverContent_PSBLAS;
@@ -86,6 +89,7 @@ typedef struct _SUNLinearSolverContent_PSBLAS *SUNLinearSolverContent_PSBLAS;
 
 #define LS_PTYPE_P(S) ( PSBLAS_CONTENT(S)->ptype )
 
+#define LS_BUILDTYPE_P(S) ( PSBLAS_CONTENT(S)->buildtype )
 
 /* ---------------------------------------
  * Exported Functions for SUNLINSOL_PSBLAS
@@ -105,6 +109,7 @@ SUNDIALS_EXPORT int SUNLinSolSeti_PSBLAS(SUNLinearSolver S, const char *what, ps
 SUNDIALS_EXPORT int SUNLinSolSetc_PSBLAS(SUNLinearSolver S, const char *what, const char *val);
 SUNDIALS_EXPORT int SUNLinSolSetr_PSBLAS(SUNLinearSolver S, const char *what, double val);
 SUNDIALS_EXPORT int SUNLinSolSetPreconditioner_PSBLAS(SUNLinearSolver S, SUNMatrix B);
+SUNDIALS_EXPORT int SUNLinSolSetbuildtype_PSBLAS(SUNLinearSolver S, int buildtype);
 /* Get functions */
 SUNDIALS_EXPORT int SUNLinSolNumIters_PSBLAS(SUNLinearSolver S);
 SUNDIALS_EXPORT realtype SUNLinSolResNorm_PSBLAS(SUNLinearSolver S);
