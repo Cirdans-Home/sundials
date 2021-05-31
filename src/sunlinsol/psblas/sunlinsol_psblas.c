@@ -164,6 +164,7 @@ int SUNLinSolSetup_PSBLAS(SUNLinearSolver S, SUNMatrix A){
   psb_i_t ret;
   psb_i_t iam,np;
   psb_i_t ictxt1, ictxt2;
+  psb_d_t t1,t2;
 
   if (S == NULL || A == NULL) return(SUNLS_MEM_NULL);
   psb_c_info(*(LS_CCTXT_P(S)),&iam,&np);
@@ -173,6 +174,7 @@ int SUNLinSolSetup_PSBLAS(SUNLinearSolver S, SUNMatrix A){
       printf("The build phase has been inhibited, set the buildtype to a number");
       printf(" greater or equal to 0, it is %d\n",LS_BUILDTYPE_P(S));
       }
+    return(SUNLS_SUCCESS);
   }
 
   // Use the information contained in A to setup the field in S
@@ -188,6 +190,7 @@ int SUNLinSolSetup_PSBLAS(SUNLinearSolver S, SUNMatrix A){
   psb_c_info(*(LS_CCTXT_P(S)),&iam,&np);
   if(iam==0) printf("\n\tI'm building the %s preconditioner ",LS_PTYPE_P(S));
 
+  t1 = psb_c_wtime();
   if ( LS_BMAT_P(S) == NULL){
     if(iam==0) printf("on the same matrix of the system.\n");
     // The init routine depends on the fact that we are using PSBLAS or AMG4PSBLAS
@@ -200,10 +203,16 @@ int SUNLinSolSetup_PSBLAS(SUNLinearSolver S, SUNMatrix A){
       strcmp(LS_PTYPE_P(S),"GS") == 0 ||
       strcmp(LS_PTYPE_P(S),"AS") == 0 ||
       strcmp(LS_PTYPE_P(S),"FBGS") == 0 ){
+        if( LS_BUILDTYPE_P(S) == 0){
         ret = amg_c_dhierarchy_build(LS_PMAT_P(S),LS_DESCRIPTOR_P(S),LS_MLPREC_P(S));
         if(ret != 0) return(SUNLS_PSET_FAIL_UNREC);
         ret = amg_c_dsmoothers_build(LS_PMAT_P(S),LS_DESCRIPTOR_P(S),LS_MLPREC_P(S));
         if(ret != 0) return(SUNLS_PSET_FAIL_UNREC);
+        }
+        if( LS_BUILDTYPE_P(S) == 1){
+          ret = amg_c_dsmoothers_build(LS_PMAT_P(S),LS_DESCRIPTOR_P(S),LS_MLPREC_P(S));
+          if(ret != 0) return(SUNLS_PSET_FAIL_UNREC);
+        }
     }
   } else {
     if(iam==0) printf("on the provided auxiliary matrix.\n");
@@ -233,17 +242,19 @@ int SUNLinSolSetup_PSBLAS(SUNLinearSolver S, SUNMatrix A){
     if(iam==0) printf("\tDescription of the preconditioner:\n\n");
     amg_c_ddescr(LS_MLPREC_P(S));
   }
-  if(iam==0) printf("\tBuilding phase of the preconditioner completed\n\n");
+  t2 = psb_c_wtime();
+  if(iam==0) printf("\tBuilding phase of the preconditioner completed in %e (s)\n\n",t2-t1);
   return(SUNLS_SUCCESS);
-
 
 }
 
 int SUNLinSolSolve_PSBLAS(SUNLinearSolver S, SUNMatrix A,
                                             N_Vector x, N_Vector b,
                                             realtype tol){
-  psb_i_t ret;
+  psb_i_t ret,iam,np;
+  psb_d_t t1,t2;
 
+  psb_c_info(*(LS_CCTXT_P(S)),&iam,&np);
   PSBLAS_CONTENT(S)->options.eps = tol;
   N_VAsb_PSBLAS(b);
   N_VAsb_PSBLAS(x);
@@ -252,7 +263,7 @@ int SUNLinSolSolve_PSBLAS(SUNLinearSolver S, SUNMatrix A,
   if( strcmp(LS_PTYPE_P(S),"NONE") == 0||
       strcmp(LS_PTYPE_P(S),"BJAC") == 0 ||
       strcmp(LS_PTYPE_P(S),"DIAG") == 0 ){
-
+    t1 = psb_c_wtime();
     ret=psb_c_dkrylov(LS_METHD_P(S),
                     LS_PMAT_P(S),
                     LS_PREC_P(S),
@@ -260,11 +271,13 @@ int SUNLinSolSolve_PSBLAS(SUNLinearSolver S, SUNMatrix A,
                     NV_PVEC_P(x),
                     LS_DESCRIPTOR_P(S),
                     &(PSBLAS_CONTENT(S)->options));
+    t2 = psb_c_wtime();
     if(ret != 0) return(SUNLS_PACKAGE_FAIL_REC);
   }else if(strcmp(LS_PTYPE_P(S),"ML") == 0 ||
     strcmp(LS_PTYPE_P(S),"GS") == 0 ||
     strcmp(LS_PTYPE_P(S),"AS") == 0 ||
     strcmp(LS_PTYPE_P(S),"FBGS") == 0 ){
+    t1 = psb_c_wtime();
     ret=amg_c_dkrylov(LS_METHD_P(S),
                     LS_PMAT_P(S),
                     LS_MLPREC_P(S),
@@ -272,8 +285,11 @@ int SUNLinSolSolve_PSBLAS(SUNLinearSolver S, SUNMatrix A,
                     NV_PVEC_P(x),
                     LS_DESCRIPTOR_P(S),
                     &(PSBLAS_CONTENT(S)->options));
+    t2 = psb_c_wtime();
     if(ret != 0) return(SUNLS_PACKAGE_FAIL_REC);
   }
+
+  if(iam == 0) printf("\n\tLinear System Solve time is: %e\n",t2-t1);
 
   return(SUNLS_SUCCESS);
 }

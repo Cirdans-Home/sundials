@@ -1026,6 +1026,7 @@
      user_data.functioncount = 0; // reset counter for function evals
      user_data.jacobiancount = 0; // reset counter for Jacobian evals
      user_data.buildjacobian = false;
+     SUNLinSolSetbuildtype_PSBLAS(*(user_data.LS), -1); // Since we do not change the Jacobian we do not build the preconditioner
 
      /* For Euler Time-Stepping we take note of the old pressure value */
      N_VLinearSum(1.0,u,0.0,user_data.oldpressure,user_data.oldpressure);
