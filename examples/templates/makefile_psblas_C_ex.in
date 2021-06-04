@@ -31,13 +31,14 @@ include $(prefix)/include/Make.inc.amg4psblas
 PSBC_LIBS= -L$(prefix)/lib -lpsb_cbind
 PSB_LIBS=-L$(prefix)/lib -lpsb_krylov -lpsb_prec -lpsb_util -lpsb_base
 MLD_LIBS=-L$(prefix)/lib -lamg_prec -lamg_cbind $(MUMPSLIBS) $(SLULIBS) $(UMFLIBS) $(EXTRALIBS)
+LINKED_LIBS=@LINKED_LIBRARIES@
 
 CPP         = @CPP@
 CPPFLAGS    = @CPPFLAGS@
 CC          = @CC@
 CFLAGS      = @CFLAGS@ $(PSBCDEFINES) $(MUMPSFLAGS) $(SLUFLAGS) $(UMFFLAGS) $(MLDFDEFINES)
-LDFLAGS     = @LDFLAGS@ $(PSBC_LIBS) $(PSB_LIBS) $(LAPACK) $(BLAS) $(METIS_LIB) $(AMD_LIB) $(MLD_LIBS) -lm -lgfortran
-LIBS        = @LIBS@ $(PSBC_LIBS) $(PSB_LIBS) $(LAPACK) $(BLAS) $(METIS_LIB) $(AMD_LIB) $(MLD_LIBS) -lm -lgfortran
+LDFLAGS     = @LDFLAGS@ $(MLD_LIBS) $(PSBC_LIBS) $(PSB_LIBS) $(LAPACK) $(BLAS) $(METIS_LIB) $(AMD_LIB) -lm -lgfortran -lstdc++ $(LINKED_LIBS)
+LIBS        = @LIBS@ $(MLD_LIBS) $(PSBC_LIBS) $(PSB_LIBS) $(LAPACK) $(BLAS) $(METIS_LIB) $(AMD_LIB) -lm -lgfortran -lstdc++ $(LINKED_LIBS)
 
 LINKFLAGS = -Wl,-rpath,@libdir@
 
@@ -50,7 +51,7 @@ MPI_FLAGS   = @MPI_FLAGS@
 
 TMP_INCS  = ${includedir} ${MPI_INC_DIR} $(CINCLUDES) $(FINCLUDES)
 INCLUDES  = $(addprefix -I, ${TMP_INCS})
-LIBRARIES = -l@SOLVER_LIB@ -lsundials_sunmatrixpsblas -lsundials_nvecpsblas ${LIBS} 
+LIBRARIES = -l@SOLVER_LIB@ -lsundials_sunmatrixpsblas -lsundials_nvecpsblas ${LIBS}
 
 EXAMPLES = @EXAMPLES@
 EXAMPLES_DEPENDENCIES = @EXAMPLES_DEPENDENCIES@

@@ -484,16 +484,8 @@ x and y are of type N_Vector: z_i = a x_i + b y_i, i=0,...,n-1*/
 void N_VConst_PSBLAS(realtype c, N_Vector z)
 {
 /*Sets all components of the N_Vector z to realtype c: z_i = c, i=0,...,n-1   */
-  psb_i_t glob_row, ng;
-  psb_l_t irow[1];
-  double zt[1];
-  zt[0]=c;
-  ng = N_VGetLength_PSBLAS(z);
 
-  for (glob_row=0; glob_row < ng; glob_row++) {
-    irow[0]=glob_row;
-    psb_c_dgeins(1,irow,zt,NV_PVEC_P(z) ,NV_DESCRIPTOR_P(z));
-  }
+  psb_c_dvect_set_scal(NV_PVEC_P(z), c);
 
   N_VAsb_PSBLAS(z);
 
