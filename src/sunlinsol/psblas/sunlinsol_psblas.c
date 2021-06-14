@@ -201,7 +201,6 @@ int SUNLinSolSetup_PSBLAS(SUNLinearSolver S, SUNMatrix A){
         if(ret != 0) return(SUNLS_PSET_FAIL_UNREC);
     }else if(strcmp(LS_PTYPE_P(S),"ML") == 0 ||
       strcmp(LS_PTYPE_P(S),"GS") == 0 ||
-      strcmp(LS_PTYPE_P(S),"AS") == 0 ||
       strcmp(LS_PTYPE_P(S),"FBGS") == 0 ){
         if( LS_BUILDTYPE_P(S) == 0){
         ret = amg_c_dhierarchy_build(LS_PMAT_P(S),LS_DESCRIPTOR_P(S),LS_MLPREC_P(S));
@@ -213,6 +212,9 @@ int SUNLinSolSetup_PSBLAS(SUNLinearSolver S, SUNMatrix A){
           ret = amg_c_dsmoothers_build(LS_PMAT_P(S),LS_DESCRIPTOR_P(S),LS_MLPREC_P(S));
           if(ret != 0) return(SUNLS_PSET_FAIL_UNREC);
         }
+    } else if ( strcmp(LS_PTYPE_P(S),"AS") == 0 ){
+	  ret = amg_c_dprecbld(LS_PMAT_P(S),LS_DESCRIPTOR_P(S),LS_MLPREC_P(S));
+	  if(ret != 0) return(SUNLS_PSET_FAIL_UNREC);
     }
   } else {
     if(iam==0) printf("on the provided auxiliary matrix.\n");
@@ -223,7 +225,6 @@ int SUNLinSolSetup_PSBLAS(SUNLinearSolver S, SUNMatrix A){
         if(ret != 0) return(SUNLS_PSET_FAIL_UNREC);
     }else if(strcmp(LS_PTYPE_P(S),"ML") == 0 ||
       strcmp(LS_PTYPE_P(S),"GS") == 0 ||
-      strcmp(LS_PTYPE_P(S),"AS") == 0 ||
       strcmp(LS_PTYPE_P(S),"FBGS") == 0 ){
           if( LS_BUILDTYPE_P(S) == 0){
           ret = amg_c_dhierarchy_build(LS_BMAT_P(S),LS_DESCRIPTOR_P(S),LS_MLPREC_P(S));
@@ -235,7 +236,10 @@ int SUNLinSolSetup_PSBLAS(SUNLinearSolver S, SUNMatrix A){
           ret = amg_c_dsmoothers_build(LS_BMAT_P(S),LS_DESCRIPTOR_P(S),LS_MLPREC_P(S));
           if(ret != 0) return(SUNLS_PSET_FAIL_UNREC);
         }
-    }
+    } else if ( strcmp(LS_PTYPE_P(S),"AS") == 0 ){
+          ret = amg_c_dprecbld(LS_PMAT_P(S),LS_DESCRIPTOR_P(S),LS_MLPREC_P(S));
+	  if(ret != 0) return(SUNLS_PSET_FAIL_UNREC);
+    }    
   }
   /* Print out information on the preconditioner */
   if(strcmp(LS_PTYPE_P(S),"ML") == 0) {
