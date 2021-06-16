@@ -1178,6 +1178,7 @@ static int funcprpr(N_Vector u, N_Vector fval, void *user_data)
    psb_i_t ix, iy, iz, ijk[3],sizes[3];
    FILE *outfile1,*outfile2;
    char infilename[20],outfilename[20];
+   psb_d_t tic, toc;
 
    /* Problem parameters */
    psb_d_t thetas, thetar, alpha, beta, a, gamma, Ks, dt, rho, phi, pr;
@@ -1210,10 +1211,22 @@ static int funcprpr(N_Vector u, N_Vector fval, void *user_data)
    // Who am I?
    psb_c_info(*(NV_CCTXT_P(u)),&iam,&np);
    psb_c_set_index_base(0);
+   psb_c_barrier(*(NV_CCTXT_P(u)));
+   tic = psb_c_wtime();
    info = psb_c_dhalo(NV_PVEC_P(u),NV_DESCRIPTOR_P(u));
+   psb_c_barrier(*(NV_CCTXT_P(u)));
+   toc = psb_c_wtime();
+   if( iam == 0 ) fprintf(stderr, "\t Halo exchange: %e\n",toc-tic);
+
    if( info != 0)
       fprintf(stderr, "Halo Error (u) on process %d info: %d\n",iam,info);
+   psb_c_barrier(*(NV_CCTXT_P(u)));
+   tic = psb_c_wtime();
    info = psb_c_dhalo(NV_PVEC_P(uold),NV_DESCRIPTOR_P(uold));
+   psb_c_barrier(*(NV_CCTXT_P(u)));
+   toc = psb_c_wtime();
+   if( iam == 0 ) fprintf(stderr, "\t Halo exchange: %e\n",toc-tic);
+
    if( info != 0)
       fprintf(stderr, "Halo Error (uold) on process %d info: %d\n",iam,info);
 
@@ -1257,7 +1270,8 @@ static int funcprpr(N_Vector u, N_Vector fval, void *user_data)
    }
 
 
-
+   psb_c_barrier(*(NV_CCTXT_P(u)));
+   tic = psb_c_wtime();
    for (i=0; i<nl;  i++) {
      glob_row=input->vl[i];                 // Get the index of the global row
      // We compute the local indexes of the elements on the stencil
@@ -1346,6 +1360,10 @@ static int funcprpr(N_Vector u, N_Vector fval, void *user_data)
    // We assemble the vector at the end
    if(psb_c_dgeasb(NV_PVEC_P(fval),NV_DESCRIPTOR_P(fval))!=0)
       fprintf(stderr,"Process %d Completed Vector Assembly with info = %d!\n",iam,info);
+   psb_c_barrier(*(NV_CCTXT_P(u)));
+   toc = psb_c_wtime();
+
+   if(iam == 0) fprintf(stderr,"\t Function evaluation: %e\n",toc-tic);
 
    if ( input->verbosity > 1 ){
       printf("I am %d and I'm writing out the vector!\n",iam);
@@ -1409,7 +1427,12 @@ static int jac(N_Vector yvec, N_Vector fvec, SUNMatrix J,
   // Who am I?
   psb_c_info(*(NV_CCTXT_P(yvec)),&iam,&np);
   psb_c_set_index_base(0);
+  psb_c_barrier(*(NV_CCTXT_P(yvec)));
+  tic = psb_c_wtime();
   info = psb_c_dhalo(NV_PVEC_P(yvec),NV_DESCRIPTOR_P(yvec));
+  psb_c_barrier(*(NV_CCTXT_P(yvec)));
+  toc = psb_c_wtime();
+
   if( info != 0)
      fprintf(stderr, "Halo Error (yvec) on process %d info: %d\n",iam,info);
 
@@ -1441,6 +1464,9 @@ static int jac(N_Vector yvec, N_Vector fvec, SUNMatrix J,
    * First of all we make sure that the Jacobian matrix is in assembly state   *
    * and that the prescribred entries can be overwritten.                      *
    ----------------------------------------------------------------------------*/
+  psb_c_barrier(*(NV_CCTXT_P(yvec)));
+  tic = psb_c_wtime();
+
   SUNMatZero_PSBLAS(J);
 
   deltahx = (double) xmax/(idim+1.0);
@@ -1597,8 +1623,8 @@ static int jac(N_Vector yvec, N_Vector fvec, SUNMatrix J,
   }
 
   // Assemble and return
-  tic = psb_c_wtime();
   if ((info=psb_c_dspasb(SM_PMAT_P(J),SM_DESCRIPTOR_P(J)))!=0)  return(info);
+  psb_c_barrier(*(NV_CCTXT_P(yvec)));
   toc = psb_c_wtime();
   if (iam == 0) fprintf(stdout, "Buit new Jacobian in %lf s\n",toc-tic);
 
@@ -1619,6 +1645,8 @@ static int jac(N_Vector yvec, N_Vector fvec, SUNMatrix J,
 
      printf("Start building auxiliary matrix\n");
 
+     psb_c_barrier(*(NV_CCTXT_P(yvec)));
+     tic = psb_c_wtime();
      SUNMatZero_PSBLAS(input->B);
      for (i=0; i<nl;  i++) {
       glob_row=input->vl[i];                 // Get the index of the global row
@@ -1759,8 +1787,9 @@ static int jac(N_Vector yvec, N_Vector fvec, SUNMatrix J,
         fprintf(stderr,"From psb_c_dspins: %d\n",info);
      }
 
-     tic = psb_c_wtime();
+     
      if ((info=psb_c_dspasb(SM_PMAT_P(input->B),SM_DESCRIPTOR_P(input->B)))!=0)  return(info);
+     psb_c_barrier(*(NV_CCTXT_P(yvec)));
      toc = psb_c_wtime();
      if (iam == 0) fprintf(stdout, "Buit auxiliary matrix in %lf s\n",toc-tic);
      // We say to the linear solver on what matrix he has to compute the
