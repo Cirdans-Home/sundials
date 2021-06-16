@@ -237,7 +237,7 @@ int SUNLinSolSetup_PSBLAS(SUNLinearSolver S, SUNMatrix A){
           if(ret != 0) return(SUNLS_PSET_FAIL_UNREC);
         }
     } else if ( strcmp(LS_PTYPE_P(S),"AS") == 0 ){
-          ret = amg_c_dprecbld(LS_PMAT_P(S),LS_DESCRIPTOR_P(S),LS_MLPREC_P(S));
+          ret = amg_c_dprecbld(LS_BMAT_P(S),LS_DESCRIPTOR_P(S),LS_MLPREC_P(S));
 	  if(ret != 0) return(SUNLS_PSET_FAIL_UNREC);
     }    
   }
