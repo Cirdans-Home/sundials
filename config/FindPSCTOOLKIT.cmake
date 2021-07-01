@@ -127,7 +127,7 @@ set(AMGCDEFINES "${FLAGS_MUMPS_LIB} ${FLAGS_SLU_LIB} ${FLAGS_SLUDIST_LIB} ${FLAG
 set(LINK_PSBLAS -lgfortran -L${PSCTOOLKIT_DIR}/lib
     -lamg_cbind -lamg_prec
     -lpsb_cbind -lpsb_util -lpsb_krylov -lpsb_prec -lpsb_base
-    -L/usr/lib/x86_64-linux-gnu/openmpi/lib -lmpi_usempif08 -lmpi_usempi_ignore_tkr -lmpi_cxx -lmpi_mpifh -lmpi -lstdc++)
+    -L/usr/lib/x86_64-linux-gnu/openmpi/lib -lmpi_usempif08 -lmpi_usempi_ignore_tkr -lmpi_cxx -lmpi_mpifh -lmpi -lstdc++ -lgfortran)
 
 set(LINKED_LIBRARIES "${LINK_PSBLAS} ${LINK_BLAS} ${LINK_METIS_LIB} ${LINK_AMD_LIB} ${LINK_MUMPS_LIB} ${LINK_SLU_LIB} ${LINK_SLUDIST_LIB} ${LINK_UMF_LIB} ${LINK_EXTRA_LIB}")
 string(STRIP "${LINKED_LIBRARIES}" LINKED_LIBRARIES)

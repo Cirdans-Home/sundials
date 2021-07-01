@@ -30,8 +30,7 @@ include $(prefix)/include/Make.inc.psblas
 include $(prefix)/include/Make.inc.amg4psblas
 PSBC_LIBS= -L$(prefix)/lib -lpsb_cbind
 PSB_LIBS=-L$(prefix)/lib -lpsb_krylov -lpsb_prec -lpsb_util -lpsb_base
-MLD_LIBS=-L$(prefix)/lib -lamg_prec -lamg_cbind $(MUMPSLIBS) $(SLULIBS) $(UMFLIBS) $(EXTRALIBS)
-LINKED_LIBS=@LINKED_LIBRARIES@
+MLD_LIBS=-L$(prefix)/lib -lamg_cbind -lamg_prec $(MUMPSLIBS) $(SLULIBS) $(UMFLIBS) $(EXTRALIBS)
 
 CPP         = @CPP@
 CPPFLAGS    = @CPPFLAGS@
