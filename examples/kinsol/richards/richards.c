@@ -1158,6 +1158,7 @@
        N_VDestroy(constraints);
        N_VDestroy(sc);
        N_VDestroy(su);
+       N_VDestroy(user_data.oldpressure);
        SUNMatDestroy(J);
        SUNMatDestroy(user_data.B);
        SUNLinSolFree(LS);
@@ -1196,6 +1197,7 @@
    for (i = 0; i < nl; i++)
       free(ijkvec[i]);
    free(ijkvec);
+   free(vl);
    free(perf_info.numjacobianspertimestep);
    free(perf_info.numfevalspertimestep);
    free(perf_info.liniterperstep);
@@ -1205,6 +1207,7 @@
    N_VDestroy(constraints);
    N_VDestroy(sc);
    N_VDestroy(su);
+   N_VDestroy(user_data.oldpressure);
    SUNMatDestroy(J);
    SUNMatDestroy(user_data.B);
    SUNLinSolFree(LS);
