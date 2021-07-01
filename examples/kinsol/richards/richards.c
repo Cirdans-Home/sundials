@@ -136,6 +136,8 @@
     psb_i_t jacobiancount;
     psb_i_t verbosity;
     bool buildjacobian;
+    psb_l_t **l2g;
+    psb_l_t **ijkvec;
   };
 
   struct performanceinfo {
@@ -163,6 +165,8 @@
     psb_i_t npx, npy, npz, mynx, myny, mynz, iamx, iamy, iamz;
     psb_i_t *bndx, *bndy, *bndz;
     psb_l_t irow[10*NBMAX], icol[10*NBMAX];
+    psb_l_t **l2g, **ijkvec;
+    psb_d_t deltahx,deltahy,deltahz,x,y,z;
     /* Problem data */
     N_Vector     u,constraints,su,sc;
     SUNMatrix    J;
@@ -652,6 +656,55 @@
      fprintf(stdout,"Communicator Building time: %lf s\n",timecdh);
    }
 
+   /*-------------------------------------------------------------------------
+    * Collect indices for FD formulas in global numbering, this will avoid
+    * many calls to the g2l and l2g functions at the cost of storing 5*nl long
+    * integer datas.
+    *-------------------------------------------------------------------------*/
+    deltahx = (double) xmax/(idim+1.0);
+    deltahy = (double) ymax/(jdim+1.0);
+    deltahz = (double) L/(kdim+1.0);
+    l2g = (psb_l_t **)malloc(nl * sizeof(psb_l_t *));
+    ijkvec = (psb_l_t **)malloc(nl * sizeof(psb_l_t *));
+    for (i=0; i<nl;  i++) {
+     l2g[i] = (psb_l_t *)malloc(8 * sizeof(psb_l_t));
+     ijkvec[i] = (psb_l_t *)malloc(3 * sizeof(psb_l_t));
+     glob_row = vl[i];                 // Get the index of the global row
+     psb_c_l_idx2ijk(ijk,glob_row,sizes,3,0);
+     ix = ijk[0]; iy = ijk[1]; iz = ijk[2];
+     x = (ix+1)*deltahx; y = (iy+1)*deltahy; z = (iz+1)*deltahz;
+     ijkvec[i][0] = ix; ijkvec[i][1] = iy; ijkvec[i][2] = iz;
+
+     l2g[i][0] = glob_row;
+     l2g[i][1] = glob_row;
+     if (ix != 0){
+        ijk[0] = ix - 1; ijk[1] = iy; ijk[2] = iz;
+        l2g[i][2] = psb_c_l_ijk2idx(ijk,sizes,3,0);
+     }
+     if (ix != idim-1){
+        ijk[0] = ix+1; ijk[1] = iy; ijk[2] = iz;
+        l2g[i][3] = psb_c_l_ijk2idx(ijk,sizes,3,0);
+     }
+     if (iy != 0){
+        ijk[0] = ix; ijk[1] = iy-1; ijk[2] = iz;
+        l2g[i][4] = psb_c_l_ijk2idx(ijk,sizes,3,0);
+     }
+     if (iy != jdim-1){
+        ijk[0] = ix; ijk[1] = iy+1; ijk[2] = iz;
+        l2g[i][5] = psb_c_l_ijk2idx(ijk,sizes,3,0);
+     }
+     if (iz != 0){
+        ijk[0] = ix; ijk[1] = iy; ijk[2] = iz-1;
+        l2g[i][6] = psb_c_l_ijk2idx(ijk,sizes,3,0);
+     }
+     if (iz != kdim-1){
+        ijk[0] = ix; ijk[1] = iy; ijk[2] = iz+1;
+        l2g[i][7] = psb_c_l_ijk2idx(ijk,sizes,3,0);
+     }
+    }
+    user_data.l2g = l2g;
+    user_data.ijkvec = ijkvec;
+
    /*-------------------------------------------------------
     * Linear Solver Setup and construction
     *-------------------------------------------------------*/
@@ -1137,7 +1190,12 @@
    }
 
    /* Free the Memory */
-
+   for (i = 0; i <  nl; i++)
+      free(l2g[i]);
+   free(l2g);
+   for (i = 0; i < nl; i++)
+      free(ijkvec[i]);
+   free(ijkvec);
    free(perf_info.numjacobianspertimestep);
    free(perf_info.numfevalspertimestep);
    free(perf_info.liniterperstep);
@@ -1275,8 +1333,9 @@ static int funcprpr(N_Vector u, N_Vector fval, void *user_data)
    for (i=0; i<nl;  i++) {
      glob_row=input->vl[i];                 // Get the index of the global row
      // We compute the local indexes of the elements on the stencil
-     psb_c_l_idx2ijk(ijk,glob_row,sizes,3,0);
-     ix = ijk[0]; iy = ijk[1]; iz = ijk[2];
+     //psb_c_l_idx2ijk(ijk,glob_row,sizes,3,0);
+     //ix = ijk[0]; iy = ijk[1]; iz = ijk[2];
+     ix = input->ijkvec[i][0]; iy = input->ijkvec[i][1]; iz = input->ijkvec[i][2];
      x = (ix+1)*deltahx; y = (iy+1)*deltahy; z = (iz+1)*deltahz; t = (input->timestep)*dt;
      // We compute the result of Φ(p) by first going back to the (i,j,k)
      // indexing and substiting the value of p[i,j,k] on the boundary with the
@@ -1286,56 +1345,56 @@ static int funcprpr(N_Vector u, N_Vector fval, void *user_data)
      // with the values of the nonlinear evaluations and doing some
      // matrix-vector products. This way should be faster, and less taxing on
      // the memory.
-     entries[0] = psb_c_dgetelem(NV_PVEC_P(uold),glob_row,
+     entries[0] = psb_c_dgetelem(NV_PVEC_P(uold),input->l2g[i][0],//glob_row,
                                  NV_DESCRIPTOR_P(uold)); // u^(l-1)_{i,j,k}
-     entries[1] = psb_c_dgetelem(NV_PVEC_P(u),glob_row,
+     entries[1] = psb_c_dgetelem(NV_PVEC_P(u),input->l2g[i][1],//glob_row,
                                   NV_DESCRIPTOR_P(u)); // u^(l)_{i,j,k}
      if (ix == 0) {        // Cannot do i-1
        entries[2] = boundary(0.0,y,z,t,user_data); // u^(l)_{i-1,j,k}
      }else{
-       ijk[0] = ix - 1; ijk[1] = iy; ijk[2] = iz;
+       //ijk[0] = ix - 1; ijk[1] = iy; ijk[2] = iz;
        entries[2] = psb_c_dgetelem(NV_PVEC_P(u),
-                                   psb_c_l_ijk2idx(ijk,sizes,3,0),
+                                   input->l2g[i][2],//psb_c_l_ijk2idx(ijk,sizes,3,0),
                                    NV_DESCRIPTOR_P(u)); // u^(l)_{i-1,j,k}
      }
      if (ix == idim -1){
        entries[3] = boundary(L,y,z,t,user_data);
      }else{
-       ijk[0] = ix+1; ijk[1] = iy; ijk[2] = iz;
+       //ijk[0] = ix+1; ijk[1] = iy; ijk[2] = iz;
        entries[3] = psb_c_dgetelem(NV_PVEC_P(u),
-                                   psb_c_l_ijk2idx(ijk,sizes,3,0),
+                                   input->l2g[i][3],//psb_c_l_ijk2idx(ijk,sizes,3,0),
                                    NV_DESCRIPTOR_P(u));  // u^(l)_{i+1,j,k}
      }
      if (iy == 0){       // Cannot do j-1
        entries[4] = boundary(x,0.0,z,t,user_data); // u^(l)_{i+1,j,k}
      }else{
-       ijk[0] = ix; ijk[1] = iy-1; ijk[2] = iz;
+       //ijk[0] = ix; ijk[1] = iy-1; ijk[2] = iz;
        entries[4] = psb_c_dgetelem(NV_PVEC_P(u),
-                                   psb_c_l_ijk2idx(ijk,sizes,3,0),
+                                   input->l2g[i][4],//psb_c_l_ijk2idx(ijk,sizes,3,0),
                                    NV_DESCRIPTOR_P(u));  // u^(l)_{i,j-1,k}
      }
      if (iy == jdim -1){
        entries[5] = boundary(x,L,z,t,user_data);
      }else{
-       ijk[0] = ix; ijk[1] = iy+1; ijk[2] = iz;
+       //ijk[0] = ix; ijk[1] = iy+1; ijk[2] = iz;
        entries[5] = psb_c_dgetelem(NV_PVEC_P(u),
-                                   psb_c_l_ijk2idx(ijk,sizes,3,0),
+                                   input->l2g[i][5],//psb_c_l_ijk2idx(ijk,sizes,3,0),
                                    NV_DESCRIPTOR_P(u));  // u^(l)_{i,j+1,k}
      }
      if (iz == 0){       // Cannot do k-1
        entries[6] = boundary(x,y,0.0,t,user_data);
      }else{
-       ijk[0] = ix; ijk[1] = iy; ijk[2] = iz-1;
+       //ijk[0] = ix; ijk[1] = iy; ijk[2] = iz-1;
        entries[6] = psb_c_dgetelem(NV_PVEC_P(u),
-                                   psb_c_l_ijk2idx(ijk,sizes,3,0),
+                                   input->l2g[i][6],//psb_c_l_ijk2idx(ijk,sizes,3,0),
                                    NV_DESCRIPTOR_P(u));  // u^(l)_{i,j,k-1}
      }
      if (iz == kdim -1){ // Cannot do k+1
        entries[7] = boundary(x,y,L,t,user_data);
      }else{
-       ijk[0] = ix; ijk[1] = iy; ijk[2] = iz+1;
+       //ijk[0] = ix; ijk[1] = iy; ijk[2] = iz+1;
        entries[7] = psb_c_dgetelem(NV_PVEC_P(u),
-                                   psb_c_l_ijk2idx(ijk,sizes,3,0),
+                                   input->l2g[i][7],//psb_c_l_ijk2idx(ijk,sizes,3,0),
                                    NV_DESCRIPTOR_P(u));  // u^(l)_{i,j,k+1}
      }
      // We have now recovered all the entries, and we can compute the glob_rowth
@@ -1484,8 +1543,9 @@ static int jac(N_Vector yvec, N_Vector fvec, SUNMatrix J,
   for (i=0; i<nl;  i++) {
     glob_row=input->vl[i];                 // Get the index of the global row
     // We compute the local indexes of the elements on the stencil
-    psb_c_l_idx2ijk(ijk,glob_row,sizes,3,0);
-    ix = ijk[0]; iy = ijk[1]; iz = ijk[2];
+    //psb_c_l_idx2ijk(ijk,glob_row,sizes,3,0);
+    //ix = ijk[0]; iy = ijk[1]; iz = ijk[2];
+    ix = input->ijkvec[i][0]; iy = input->ijkvec[i][1]; iz = input->ijkvec[i][2];
     x = (ix+1)*deltahx; y = (iy+1)*deltahy; z = (iz+1)*deltahz;
     el = 0;
 
@@ -1495,54 +1555,54 @@ static int jac(N_Vector yvec, N_Vector fvec, SUNMatrix J,
     temporary matrices with the values of the nonlinear evaluations and doing
     some matrix-matrix operationss. This way should be faster, and less taxing
     on the memory.                                                            */
-    entries[1] = psb_c_dgetelem(NV_PVEC_P(yvec),glob_row,
+    entries[1] = psb_c_dgetelem(NV_PVEC_P(yvec),input->l2g[i][1],//glob_row,
                                  NV_DESCRIPTOR_P(yvec)); // u^(l)_{i,j,k}
     if (ix == 0) {        // Cannot do i-1
       entries[2] = boundary(0.0,y,z,t,user_data); // u^(l)_{i-1,j,k}
     }else{
-      ijk[0] = ix - 1; ijk[1] = iy; ijk[2] = iz;
+      //ijk[0] = ix - 1; ijk[1] = iy; ijk[2] = iz;
       entries[2] = psb_c_dgetelem(NV_PVEC_P(yvec),
-                                  psb_c_l_ijk2idx(ijk,sizes,3,0),
+                                  input->l2g[i][2],//psb_c_l_ijk2idx(ijk,sizes,3,0),
                                   NV_DESCRIPTOR_P(yvec)); // u^(l)_{i-1,j,k}
     }
     if (ix == idim -1){
       entries[3] = boundary(L,y,z,t,user_data);
     }else{
-      ijk[0] = ix+1; ijk[1] = iy; ijk[2] = iz;
+      //ijk[0] = ix+1; ijk[1] = iy; ijk[2] = iz;
       entries[3] = psb_c_dgetelem(NV_PVEC_P(yvec),
-                                  psb_c_l_ijk2idx(ijk,sizes,3,0),
+                                  input->l2g[i][3],//psb_c_l_ijk2idx(ijk,sizes,3,0),
                                   NV_DESCRIPTOR_P(yvec));  // u^(l)_{i+1,j,k}
     }
     if (iy == 0){       // Cannot do j-1
       entries[4] = boundary(x,0.0,z,t,user_data); // u^(l)_{i+1,j,k}
     }else{
-      ijk[0] = ix; ijk[1] = iy-1; ijk[2] = iz;
+      //ijk[0] = ix; ijk[1] = iy-1; ijk[2] = iz;
       entries[4] = psb_c_dgetelem(NV_PVEC_P(yvec),
-                                  psb_c_l_ijk2idx(ijk,sizes,3,0),
+                                  input->l2g[i][4],//psb_c_l_ijk2idx(ijk,sizes,3,0),
                                   NV_DESCRIPTOR_P(yvec));  // u^(l)_{i,j-1,k}
     }
     if (iy == jdim -1){
       entries[5] = boundary(x,L,z,t,user_data);
     }else{
-      ijk[0] = ix; ijk[1] = iy+1; ijk[2] = iz;
+      //ijk[0] = ix; ijk[1] = iy+1; ijk[2] = iz;
       entries[5] = psb_c_dgetelem(NV_PVEC_P(yvec),
-                                  psb_c_l_ijk2idx(ijk,sizes,3,0),
+                                  input->l2g[i][5],//psb_c_l_ijk2idx(ijk,sizes,3,0),
                                   NV_DESCRIPTOR_P(yvec));  // u^(l)_{i,j+1,k}
     }
     if (iz == 0){       // Cannot do k-1
       entries[6] = boundary(x,y,0.0,t,user_data);
     }else{
-      ijk[0] = ix; ijk[1] = iy; ijk[2] = iz-1;
+      //ijk[0] = ix; ijk[1] = iy; ijk[2] = iz-1;
       entries[6] = psb_c_dgetelem(NV_PVEC_P(yvec),
-                                  psb_c_l_ijk2idx(ijk,sizes,3,0),
+                                  input->l2g[i][6],//psb_c_l_ijk2idx(ijk,sizes,3,0),
                                   NV_DESCRIPTOR_P(yvec));  // u^(l)_{i,j,k-1}
     }
     if (iz == kdim -1){ // Cannot do k+1
       entries[7] = boundary(x,y,L,t,user_data);
     }else{
-      ijk[0] = ix; ijk[1] = iy; ijk[2] = iz+1;
+      //ijk[0] = ix; ijk[1] = iy; ijk[2] = iz+1;
       entries[7] = psb_c_dgetelem(NV_PVEC_P(yvec),
-                                  psb_c_l_ijk2idx(ijk,sizes,3,0),
+                                  input->l2g[i][7],//psb_c_l_ijk2idx(ijk,sizes,3,0),
                                   NV_DESCRIPTOR_P(yvec));  // u^(l)_{i,j,k+1}
     }
 
@@ -1651,8 +1711,9 @@ static int jac(N_Vector yvec, N_Vector fvec, SUNMatrix J,
      for (i=0; i<nl;  i++) {
       glob_row=input->vl[i];                 // Get the index of the global row
       // We compute the local indexes of the elements on the stencil
-      psb_c_l_idx2ijk(ijk,glob_row,sizes,3,0);
-      ix = ijk[0]; iy = ijk[1]; iz = ijk[2];
+      //psb_c_l_idx2ijk(ijk,glob_row,sizes,3,0);
+      //ix = ijk[0]; iy = ijk[1]; iz = ijk[2];
+      ix = input->ijkvec[i][0]; iy = input->ijkvec[i][1]; iz = input->ijkvec[i][2];
       x = (ix+1)*deltahx; y = (iy+1)*deltahy; z = (iz+1)*deltahz;
       el = 0;
 
@@ -1669,7 +1730,8 @@ static int jac(N_Vector yvec, N_Vector fvec, SUNMatrix J,
       }else{
          ijk[0] = ix - 1; ijk[1] = iy; ijk[2] = iz;
          entries[2] = psb_c_dgetelem(NV_PVEC_P(yvec),
-                                     psb_c_l_ijk2idx(ijk,sizes,3,0),
+                                     //psb_c_l_ijk2idx(ijk,sizes,3,0),
+                                     input->l2g[i][2],
                                      NV_DESCRIPTOR_P(yvec)); // u^(l)_{i-1,j,k}
       }
       if (ix == idim -1){
@@ -1677,7 +1739,8 @@ static int jac(N_Vector yvec, N_Vector fvec, SUNMatrix J,
       }else{
          ijk[0] = ix+1; ijk[1] = iy; ijk[2] = iz;
          entries[3] = psb_c_dgetelem(NV_PVEC_P(yvec),
-                                     psb_c_l_ijk2idx(ijk,sizes,3,0),
+                                     //psb_c_l_ijk2idx(ijk,sizes,3,0),
+                                     input->l2g[i][3],
                                      NV_DESCRIPTOR_P(yvec));  // u^(l)_{i+1,j,k}
       }
       if (iy == 0){       // Cannot do j-1
@@ -1685,7 +1748,8 @@ static int jac(N_Vector yvec, N_Vector fvec, SUNMatrix J,
       }else{
          ijk[0] = ix; ijk[1] = iy-1; ijk[2] = iz;
          entries[4] = psb_c_dgetelem(NV_PVEC_P(yvec),
-                                     psb_c_l_ijk2idx(ijk,sizes,3,0),
+                                     //psb_c_l_ijk2idx(ijk,sizes,3,0),
+                                     input->l2g[i][4],
                                      NV_DESCRIPTOR_P(yvec));  // u^(l)_{i,j-1,k}
       }
       if (iy == jdim -1){
@@ -1693,7 +1757,8 @@ static int jac(N_Vector yvec, N_Vector fvec, SUNMatrix J,
       }else{
          ijk[0] = ix; ijk[1] = iy+1; ijk[2] = iz;
          entries[5] = psb_c_dgetelem(NV_PVEC_P(yvec),
-                                     psb_c_l_ijk2idx(ijk,sizes,3,0),
+                                     //psb_c_l_ijk2idx(ijk,sizes,3,0),
+                                     input->l2g[i][5],
                                      NV_DESCRIPTOR_P(yvec));  // u^(l)_{i,j+1,k}
       }
       if (iz == 0){       // Cannot do k-1
@@ -1701,7 +1766,8 @@ static int jac(N_Vector yvec, N_Vector fvec, SUNMatrix J,
       }else{
          ijk[0] = ix; ijk[1] = iy; ijk[2] = iz-1;
          entries[6] = psb_c_dgetelem(NV_PVEC_P(yvec),
-                                     psb_c_l_ijk2idx(ijk,sizes,3,0),
+                                     //psb_c_l_ijk2idx(ijk,sizes,3,0),
+                                     input->l2g[i][6],
                                      NV_DESCRIPTOR_P(yvec));  // u^(l)_{i,j,k-1}
       }
       if (iz == kdim -1){ // Cannot do k+1
@@ -1709,7 +1775,8 @@ static int jac(N_Vector yvec, N_Vector fvec, SUNMatrix J,
       }else{
          ijk[0] = ix; ijk[1] = iy; ijk[2] = iz+1;
          entries[7] = psb_c_dgetelem(NV_PVEC_P(yvec),
-                                     psb_c_l_ijk2idx(ijk,sizes,3,0),
+                                     //psb_c_l_ijk2idx(ijk,sizes,3,0),
+                                     input->l2g[i][7],
                                      NV_DESCRIPTOR_P(yvec));  // u^(l)_{i,j,k+1}
       }
 
@@ -1787,7 +1854,7 @@ static int jac(N_Vector yvec, N_Vector fvec, SUNMatrix J,
         fprintf(stderr,"From psb_c_dspins: %d\n",info);
      }
 
-     
+
      if ((info=psb_c_dspasb(SM_PMAT_P(input->B),SM_DESCRIPTOR_P(input->B)))!=0)  return(info);
      psb_c_barrier(*(NV_CCTXT_P(yvec)));
      toc = psb_c_wtime();
